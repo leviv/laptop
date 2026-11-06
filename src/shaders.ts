@@ -85,16 +85,18 @@ export function makeShadowMaterial(mask: THREE.Texture, blurred: THREE.Texture) 
       uSize: { value: new THREE.Vector2(100, 100) },
       uFade: { value: 1 },
       uInset: { value: 0.72 },
+      uBaseZ: { value: 0 },
     },
     vertexShader: /* glsl */ `
       uniform vec2 uLightSlope;
       uniform float uShadowZ;
+      uniform float uBaseZ;
       varying vec2 vUv;
       varying float vH;
       void main() {
         vUv = uv;
         vec4 w = modelMatrix * vec4(position, 1.0);
-        float h = max(w.z, 0.0);
+        float h = max(w.z - uBaseZ, 0.0);
         vH = h;
         w.xy -= uLightSlope * h;
         w.z = uShadowZ;

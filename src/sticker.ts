@@ -158,8 +158,12 @@ export class Sticker {
   }
 
   syncTransform() {
-    this.group.position.set(this.anchor.x, this.anchor.y, 0.02 + this.layer * 0.01);
+    // an active sticker sits well above every stuck one (and their hover lift)
+    // layers are spaced wider than the hover lift so hovering never reorders them
+    const baseZ = (this.state === 'stuck' ? 0.5 : 400) + this.layer * 5;
+    this.group.position.set(this.anchor.x, this.anchor.y, baseZ);
     this.group.rotation.z = this.angle;
+    if (this.shadowMat) this.shadowMat.uniforms.uBaseZ.value = baseZ;
   }
 
   // ---- coordinate helpers -------------------------------------------------
@@ -214,6 +218,7 @@ export class Sticker {
     this.bend.set(0, 0);
     this.carriedBlend = 0;
     this.hoverTarget = 0;
+    this.syncTransform();
     this.mesh.renderOrder = 200;
     this.shadow.renderOrder = 150;
   }
@@ -388,8 +393,14 @@ export class Sticker {
     // air-drag bend, expressed in local coords
     const c0 = Math.cos(-this.angle),
       s0 = Math.sin(-this.angle);
-    const bx = (this.vel.x * c0 - this.vel.y * s0) * params.drag.velocityBend;
-    const by = (this.vel.x * s0 + this.vel.y * c0) * params.drag.velocityBend;
+    let bx = (this.vel.x * c0 - this.vel.y * s0) * params.drag.velocityBend;
+    let by = (this.vel.x * s0 + this.vel.y * c0) * params.drag.velocityBend;
+    const mag = Math.hypot(bx, by);
+    const maxTilt = Math.max(0, params.drag.carryHeight - 2) / this.rMax;
+    if (mag > maxTilt) {
+      bx *= maxTilt / mag;
+      by *= maxTilt / mag;
+    }
     const f = 1 - Math.exp(-dt * params.drag.bendSmoothing);
     this.bend.x += (bx - this.bend.x) * f;
     this.bend.y += (by - this.bend.y) * f;
@@ -507,7 +518,7 @@ export class Sticker {
           } else {
             this.profile.sample(u, prof);
             const shift = u - prof[0];
-            smin(prof[1], maxLift, 10, sminOut);
+            smin(prof[1], maxLift, 24, sminOut);
             const zz = sminOut[0];
             const sh = shift * (0.35 + 0.65 * sminOut[1]);
             px = bxi + d.x * sh;
@@ -523,7 +534,6 @@ export class Sticker {
           const s = rx * d.x + ry * d.y;
           const far = Math.max(0, s / this.sMax);
           cz = carryH + curl * far * far - (bx * rx + by * ry);
-          if (cz < 1) cz = 1;
           cx = bxi;
           cy = byi;
         }
@@ -537,7 +547,7 @@ export class Sticker {
           if (u > 0) {
             this.profile.sample(u, prof);
             const zRaw = hDrop + prof[1];
-            smin(zRaw, hTop + hDrop, 8, sminOut);
+            smin(zRaw, hTop + hDrop, 20, sminOut);
             sz = Math.max(0, sminOut[0]);
             const shift = (u - prof[0]) * (0.3 + 0.7 * sminOut[1]);
             const inv = rho > 1e-6 ? 1 / rho : 0;
@@ -609,7 +619,7 @@ export class Sticker {
     s.uLifted.value = L.liftedShadow;
     s.uBlurHeight.value = L.shadowBlurHeight;
     s.uScatter.value = L.shadowScatter;
-    s.uShadowZ.value = 1.2;
+    s.uShadowZ.value = 300; // above every stuck sticker, below the carried one
   }
 
   dispose() {

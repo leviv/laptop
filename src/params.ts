@@ -5,11 +5,11 @@ export const DEFAULTS = {
   peel: {
     holdDuration: 0.32, // s to fully peel when just holding still
     dragDistance: 90, // px of drag that also completes the peel
-    curlRadius: 26, // px — tighter = crisper curl at the peel front
-    liftAngle: 78, // deg — sheet angle right at the grab point
-    tailAngle: 14, // deg — the free tail behind the grab point levels off to this
-    tailRelax: 60, // px over which the tail levels off
-    frontSoftness: 10, // px — how gradually the front rises off the surface
+    curlRadius: 58, // px — bend radius at the peel front; bigger = stiffer sheet
+    liftAngle: 42, // deg — angle the lifted flap reaches at the grab point
+    tailAngle: 30, // deg — the free tail behind the grab point levels off to this
+    tailRelax: 220, // px over which the tail levels off (large = stays straight)
+    frontSoftness: 18, // px — how gradually the front rises off the surface
     easing: 0.55, // 0 = linear peel, 1 = strong ease-out
   },
   drag: {
@@ -17,9 +17,9 @@ export const DEFAULTS = {
     followDamping: 28,
     hoverLift: 3, // px lift on hover
     carryHeight: 34, // px the sticker floats while carried
-    velocityBend: 0.0005, // trailing parts lift with motion (air drag feel)
-    bendSmoothing: 14, // how fast bend reacts (higher = snappier)
-    residualCurl: 6, // px — vinyl keeps a faint curl when free
+    velocityBend: 0.00025, // rigid tilt into motion (air drag feel)
+    bendSmoothing: 8, // how fast the tilt reacts (lower = heavier)
+    residualCurl: 1.5, // px — vinyl keeps a faint curl when free
     swingTorque: 0.0015, // pendulum rotation from the grab point
     swingDamping: 6.5,
     swingReturn: 9, // weak spring back to the pickup angle
@@ -27,11 +27,11 @@ export const DEFAULTS = {
   },
   stick: {
     dropDuration: 0.13, // s for the grab point to touch down
-    spreadDuration: 0.3, // s for the stuck region to spread outward
-    landAngle: 38, // deg — how steeply the unstuck sheet hangs above the front
-    squash: 0.012, // in-plane scale pulse on contact
+    spreadDuration: 0.22, // s for the stuck region to spread outward
+    landAngle: 22, // deg — how steeply the unstuck sheet hangs above the front
+    squash: 0.006, // in-plane scale pulse on contact
     squashDuration: 0.2,
-    settleWobble: 1.2, // deg of rotational settle on landing
+    settleWobble: 0.6, // deg of rotational settle on landing
   },
   look: {
     gloss: 0.55, // vinyl specular
@@ -73,7 +73,7 @@ export const DEFAULTS = {
 
 export type Params = typeof DEFAULTS;
 
-const STORAGE_KEY = 'laptop-sticker-params-v1';
+const STORAGE_KEY = 'laptop-sticker-params-v2';
 
 function deepMerge<T>(base: T, patch: any): T {
   if (typeof base !== 'object' || base === null) return patch ?? base;
