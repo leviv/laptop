@@ -3,40 +3,117 @@ import * as THREE from 'three';
 // Front: printed vinyl with a glossy specular. Back (gl_FrontFacing false):
 // the pale adhesive side. aWrap darkens the part rolled over the laptop edge.
 
-export function makeStickerMaterial(map: THREE.Texture) {
+// Uniforms shared by every sticker material (updated once per frame).
+export const shared = {
+  uTime: { value: 0 },
+  uPointer: { value: new THREE.Vector2(0, 0) },
+};
+
+export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
   return new THREE.ShaderMaterial({
     uniforms: {
       map: { value: map },
+      uSize: { value: size },
       uLightDir: { value: new THREE.Vector3(0.5, 0.6, 0.7).normalize() },
       uGloss: { value: 0.5 },
       uGlossSharp: { value: 40 },
       uBacking: { value: new THREE.Color('#eeeae2') },
       uBackingSheen: { value: 0.3 },
       uWrapShade: { value: 0.5 },
+      // holo / glitter
+      uTime: shared.uTime,
+      uPointer: shared.uPointer,
+      uHoloKind: { value: 0 },
+      uMaskMode: { value: 0 },
+      uHoloStrength: { value: 0 },
+      uPatchy: { value: 0.5 },
+      uFlake: { value: 2.5 },
+      uDensity: { value: 0.5 },
+      uBandScale: { value: 1.6 },
+      uPointerInfl: { value: 1 },
+      uTiltInfl: { value: 2 },
+      uMoveInfl: { value: 0.6 },
+      uShimmer: { value: 0.05 },
+      uHoloSat: { value: 0.85 },
+      uTwinkle: { value: 1.4 },
+      uGlitterSharp: { value: 7 },
+      uGlitterBase: { value: 0.18 },
     },
     vertexShader: /* glsl */ `
       attribute float aWrap;
       varying vec2 vUv;
       varying vec3 vNormal;
+      varying vec3 vWorld;
       varying float vWrap;
       void main() {
         vUv = uv;
         vWrap = aWrap;
         vNormal = normalize(mat3(modelMatrix) * normal);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vWorld = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
       }
     `,
     fragmentShader: /* glsl */ `
       uniform sampler2D map;
+      uniform vec2 uSize;
       uniform vec3 uLightDir;
       uniform float uGloss;
       uniform float uGlossSharp;
       uniform vec3 uBacking;
       uniform float uBackingSheen;
       uniform float uWrapShade;
+      uniform float uTime;
+      uniform vec2 uPointer;
+      uniform int uHoloKind;
+      uniform int uMaskMode;
+      uniform float uHoloStrength;
+      uniform float uPatchy;
+      uniform float uFlake;
+      uniform float uDensity;
+      uniform float uBandScale;
+      uniform float uPointerInfl;
+      uniform float uTiltInfl;
+      uniform float uMoveInfl;
+      uniform float uShimmer;
+      uniform float uHoloSat;
+      uniform float uTwinkle;
+      uniform float uGlitterSharp;
+      uniform float uGlitterBase;
       varying vec2 vUv;
       varying vec3 vNormal;
+      varying vec3 vWorld;
       varying float vWrap;
+
+      vec3 hsv2rgb(vec3 c) {
+        vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+        return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+      }
+      float hash21(vec2 p) {
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
+      float vnoise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash21(i), b = hash21(i + vec2(1.0, 0.0));
+        float c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+      // which part of the print carries the finish
+      float finishMask(vec3 rgb) {
+        float lum = dot(rgb, vec3(0.299, 0.587, 0.114));
+        float mx = max(rgb.r, max(rgb.g, rgb.b));
+        float mn = min(rgb.r, min(rgb.g, rgb.b));
+        float sat = (mx - mn) / max(mx, 1e-3);
+        if (uMaskMode == 1) return smoothstep(0.35, 0.8, lum);
+        if (uMaskMode == 2) return 1.0 - smoothstep(0.2, 0.6, lum);
+        if (uMaskMode == 3) return smoothstep(0.16, 0.45, sat) * smoothstep(0.12, 0.4, lum);
+        if (uMaskMode == 4) return (1.0 - smoothstep(0.15, 0.45, sat)) * smoothstep(0.4, 0.75, lum);
+        return 1.0;
+      }
+
       void main() {
         vec4 tex = texture2D(map, vUv);
         if (tex.a < 0.02) discard;
@@ -48,11 +125,48 @@ export function makeStickerMaterial(map: THREE.Texture) {
         float ndl = dot(n, L);
         float diff = 0.62 + 0.38 * clamp(ndl, -1.0, 1.0);
         float spec = pow(max(dot(n, H), 0.0), uGlossSharp);
-        // a soft fresnel-ish sheen on grazing (curled) parts
         float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0);
         vec3 col;
         if (gl_FrontFacing) {
           col = tex.rgb * diff + vec3(spec * uGloss) + rim * 0.08;
+
+          if (uHoloKind != 0 && uHoloStrength > 0.0) {
+            float lum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+            float m = finishMask(tex.rgb) * uHoloStrength;
+            // viewing-angle proxy: pointer as a moving light, sheet tilt, lid position
+            vec2 toP = (uPointer - vWorld.xy) / 500.0;
+            float view = (toP.x * 0.8 + toP.y * 0.6) * uPointerInfl
+                       + (n.x * 1.2 + n.y * 0.9) * uTiltInfl
+                       + (vWorld.x * 0.5 + vWorld.y * 0.35) * 0.004 * uMoveInfl
+                       + uTime * uShimmer;
+            vec2 px = vUv * uSize;
+
+            if (uHoloKind == 1) {
+              // foil: diffraction bands + blotchy crinkle
+              float bands = (px.x * 0.7 + px.y * 0.4) * uBandScale * 0.01;
+              float crinkle = vnoise(px * 0.025) * 1.6 + vnoise(px * 0.09) * 0.5;
+              float hue = fract(bands + view + crinkle * uPatchy);
+              vec3 rainbow = hsv2rgb(vec3(hue, uHoloSat, 1.0));
+              float shine = 0.6 + 0.4 * sin((bands + view) * 6.2831 + crinkle * 3.0);
+              vec3 holo = rainbow * shine;
+              vec3 foiled = col * 0.55 + holo * (0.15 + 0.85 * lum);
+              // opaque dark ink hides the foil underneath
+              col = mix(col, foiled, clamp(m * smoothstep(0.06, 0.32, lum), 0.0, 1.0));
+            } else {
+              // glitter: a grid of tiny flakes, each with its own hue and phase
+              vec2 g = px / max(uFlake, 0.5);
+              vec2 id = floor(g);
+              vec2 f = fract(g) - 0.5;
+              float h = hash21(id);
+              float present = step(1.0 - uDensity, hash21(id + 3.1));
+              float disc = smoothstep(0.5, 0.22, length(f + (vec2(hash21(id + 9.7), hash21(id + 5.3)) - 0.5) * 0.4));
+              float ph = h * 6.2831 + view * uTwinkle * 6.2831;
+              float spark = pow(max(0.0, cos(ph)), uGlitterSharp);
+              vec3 fc = hsv2rgb(vec3(hash21(id + 7.3), 0.7, 1.0));
+              float amt = present * disc * m;
+              col += fc * amt * (uGlitterBase + spark * 1.3) * (0.55 + 0.45 * lum);
+            }
+          }
         } else {
           col = uBacking * (0.6 + 0.4 * clamp(ndl, 0.0, 1.0)) + vec3(spec * uBackingSheen) + rim * 0.05;
         }

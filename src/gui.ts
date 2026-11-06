@@ -67,6 +67,19 @@ export function buildGui(hooks: GuiHooks) {
   add(look, params.look, 'shadowBlurHeight', 1, 100, 1);
   add(look, params.look, 'shadowScatter', 0, 4, 0.05);
 
+  const holo = gui.addFolder('Holo & glitter');
+  add(holo, params.holo, 'enabled');
+  add(holo, params.holo, 'strength', 0, 2, 0.01);
+  add(holo, params.holo, 'bandScale', 0.1, 6, 0.05);
+  add(holo, params.holo, 'pointerInfluence', 0, 4, 0.05);
+  add(holo, params.holo, 'tiltInfluence', 0, 8, 0.05);
+  add(holo, params.holo, 'moveInfluence', 0, 3, 0.05);
+  add(holo, params.holo, 'shimmerSpeed', 0, 0.5, 0.005);
+  add(holo, params.holo, 'saturation', 0, 1, 0.01);
+  add(holo, params.holo, 'glitterTwinkle', 0, 5, 0.05);
+  add(holo, params.holo, 'glitterSharpness', 1, 30, 0.5);
+  add(holo, params.holo, 'glitterBase', 0, 0.6, 0.01);
+
   const wrap = gui.addFolder('Edge wrap');
   add(wrap, params.wrap, 'edgeRadius', 1, 40, 0.5).onFinishChange(hooks.onWrapChange);
   add(wrap, params.wrap, 'fadeHeight', 0.5, 60, 0.5);
@@ -92,7 +105,7 @@ export function buildGui(hooks: GuiHooks) {
   add(mesh, params.mesh, 'segments', 6, 80, 1).onFinishChange(hooks.onMeshChange);
   mesh.close();
 
-  for (const f of [drag, stick, look, wrap, outline, sound]) f.close();
+  for (const f of [drag, stick, look, holo, wrap, outline, sound]) f.close();
 
   const actions = {
     copy: async () => {

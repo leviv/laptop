@@ -8,6 +8,7 @@ import { View } from './view';
 import { Outline } from './outline';
 import { buildGui } from './gui';
 import { unlockAudio } from './audio';
+import { shared } from './shaders';
 
 const app = document.getElementById('app')!;
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -125,6 +126,7 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
+  view.screenToWorld(e.clientX, e.clientY, shared.uPointer.value);
   if (held && e.pointerId === heldPointerId) {
     if (!moved && Math.hypot(e.clientX - downScreen.x, e.clientY - downScreen.y) > 4) moved = true;
     view.screenToWorld(e.clientX, e.clientY, tmpW);
@@ -170,6 +172,7 @@ resize();
 
 let last = performance.now();
 function step(dt: number) {
+  shared.uTime.value += dt;
   for (const s of stickers) s.update(dt);
   outline.update(selected, view, dt);
   renderer.render(scene, view.camera);

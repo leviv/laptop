@@ -4,6 +4,7 @@ import { params } from './params';
 import { CurlProfile } from './profile';
 import { type Mask, imageToMask, sampleAlpha, traceOutline } from './contour';
 import { makeStickerMaterial, makeShadowMaterial, makeBlurredAlpha } from './shaders';
+import { EFFECTS, KINDS, MASK_MODES } from './effects';
 import { SURFACE, surfaceSDF } from './laptop';
 import * as audio from './audio';
 
@@ -117,7 +118,17 @@ export class Sticker {
     const blurred = makeBlurredAlpha(img);
 
     this.buildGeometry();
-    this.material = makeStickerMaterial(tex);
+    this.material = makeStickerMaterial(tex, new THREE.Vector2(this.def.w, this.def.h));
+    const fx = EFFECTS[this.def.id];
+    if (fx) {
+      const u = this.material.uniforms;
+      u.uHoloKind.value = KINDS[fx.kind];
+      u.uMaskMode.value = MASK_MODES[fx.mask];
+      u.uHoloStrength.value = fx.strength;
+      u.uPatchy.value = fx.patchy ?? 0.5;
+      u.uFlake.value = fx.flake ?? 2.5;
+      u.uDensity.value = fx.density ?? 0.5;
+    }
     this.shadowMat = makeShadowMaterial(tex, blurred);
     this.shadowMat.uniforms.uSize.value.set(this.def.w, this.def.h);
     this.mesh = new THREE.Mesh(this.geo, this.material);
@@ -613,6 +624,18 @@ export class Sticker {
     u.uBacking.value.set(L.backingTint);
     u.uBackingSheen.value = L.backingSheen;
     u.uWrapShade.value = params.wrap.shade;
+    const Hh = params.holo;
+    const fx = EFFECTS[this.def.id];
+    u.uHoloStrength.value = fx && Hh.enabled ? fx.strength * Hh.strength : 0;
+    u.uBandScale.value = Hh.bandScale;
+    u.uPointerInfl.value = Hh.pointerInfluence;
+    u.uTiltInfl.value = Hh.tiltInfluence;
+    u.uMoveInfl.value = Hh.moveInfluence;
+    u.uShimmer.value = Hh.shimmerSpeed;
+    u.uHoloSat.value = Hh.saturation;
+    u.uTwinkle.value = Hh.glitterTwinkle;
+    u.uGlitterSharp.value = Hh.glitterSharpness;
+    u.uGlitterBase.value = Hh.glitterBase;
     const s = this.shadowMat.uniforms;
     s.uLightSlope.value.set(lx / Math.max(0.05, lz), ly / Math.max(0.05, lz));
     s.uContact.value = L.contactShadow;

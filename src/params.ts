@@ -45,6 +45,19 @@ export const DEFAULTS = {
     shadowBlurHeight: 26, // px height over which the shadow softens
     shadowScatter: 1, // how far the soft shadow spreads
   },
+  holo: {
+    enabled: true,
+    strength: 1.0,
+    bandScale: 1.6, // rainbow bands per 100 px of foil
+    pointerInfluence: 1.0, // the pointer acts as a moving light
+    tiltInfluence: 2.2, // bending the sheet sweeps the colours
+    moveInfluence: 0.6, // sliding across the lid shifts them too
+    shimmerSpeed: 0.05, // slow idle drift
+    saturation: 0.85,
+    glitterTwinkle: 1.4, // how fast flakes flip as the angle changes
+    glitterSharpness: 7, // higher = fewer, sharper sparkles
+    glitterBase: 0.18, // flakes faintly visible even when not sparkling
+  },
   wrap: {
     edgeRadius: 12, // px — bevel radius the sticker rolls over
     fadeHeight: 12, // px — wrapping only kicks in near the surface
@@ -73,7 +86,7 @@ export const DEFAULTS = {
 
 export type Params = typeof DEFAULTS;
 
-const STORAGE_KEY = 'laptop-sticker-params-v2';
+const STORAGE_KEY = 'laptop-sticker-params-v3';
 
 function deepMerge<T>(base: T, patch: any): T {
   if (typeof base !== 'object' || base === null) return patch ?? base;
