@@ -22,8 +22,8 @@ export const EFFECTS: Record<string, HoloConfig> = {
   // hedgehog + fox: fine glitter in the dark fur
   '29-148': { kind: 'glitter', mask: 'dark', strength: 0.9, flake: 2.1, density: 0.4 },
   '29-149': { kind: 'glitter', mask: 'dark', strength: 0.7, flake: 2.1, density: 0.35 },
-  // BUZZ graffiti: silver holo foil behind the print
-  '41-79': { kind: 'foil', mask: 'silver', strength: 1.25, patchy: 0.45 },
+  // BUZZ graffiti: holo foil across the whole print (the black outlines stay matte)
+  '41-79': { kind: 'foil', mask: 'all', strength: 0.75, patchy: 0.5 },
   // buzz: pink holo foil, blotchy
   '41-78': { kind: 'foil', mask: 'all', strength: 0.5, patchy: 0.55 },
   // Data & Design: the icosahedron lines are foil
