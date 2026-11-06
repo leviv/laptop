@@ -55,19 +55,54 @@ body {
   pointer-events: none;
 }
 
-.lil-gui.sticker-gui {
-  --background-color: #fff;
+.lil-gui.sticker-gui,
+.lil-gui.sticker-gui .lil-gui {
+  --background-color: #ffffff;
   --text-color: #1e1e1e;
   --title-background-color: #f0f0ef;
   --title-text-color: #1e1e1e;
-  --widget-color: #f4f4f3;
-  --hover-color: #ececea;
-  --focus-color: #e3e3e1;
-  --number-color: #0d99ff;
-  --string-color: #0d99ff;
+  --widget-color: #ededeb;
+  --hover-color: #e4e4e2;
+  --focus-color: #d9d9d7;
+  --number-color: #0d7ed1;
+  --string-color: #0d7ed1;
   --font-size: 11px;
   --input-font-size: 11px;
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.08);
+  --padding: 4px;
+  --spacing: 4px;
+  --widget-height: 20px;
+  --name-width: 48%;
+  --slider-knob-width: 2px;
+  --slider-input-width: 27%;
+  --color-input-width: 27%;
+  --slider-input-min-width: 45px;
+  --color-input-min-width: 45px;
+  --folder-indent: 7px;
+  --widget-padding: 0 0 0 3px;
+  --widget-border-radius: 2px;
+  --checkbox-size: calc(0.75 * var(--widget-height));
+  --scrollbar-width: 5px;
+}
+
+.lil-gui.sticker-gui {
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e3e3e1;
   border-radius: 6px;
   overflow: hidden;
+}
+
+.lil-gui.sticker-gui .controller .name {
+  color: #1e1e1e;
+}
+
+.lil-gui.sticker-gui .controller.number .slider {
+  background: #e6e6e4;
+}
+
+.lil-gui.sticker-gui .controller.number .fill {
+  background: #0d99ff;
+}
+
+.lil-gui.sticker-gui input {
+  color: #1e1e1e;
 }
