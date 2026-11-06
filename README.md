@@ -26,7 +26,9 @@ current parameter set on the clipboard as JSON; paste it over `DEFAULTS` in
   re-sticking spreads a circular front outward from the touch point.
 - `src/shaders.ts` — vinyl front / adhesive back material with a glossy specular,
   plus a planar shadow that projects the deformed sheet along the light: sharp
-  near contact, blurred and spread when lifted.
+  near contact, blurred and spread when lifted. A top-down height map of every
+  stuck sticker (additive footprints) lets a sticker lying across another one
+  show the ridge where it climbs over the edge underneath.
 - `src/laptop.ts` — the lid as a rounded-rect signed distance field. Any part of
   a sticker past the flat face rolls over the bevel and down the side.
 - `src/contour.ts` — alpha mask → outline polygon (marching squares) for the

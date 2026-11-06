@@ -66,6 +66,9 @@ export function buildGui(hooks: GuiHooks) {
   add(look, params.look, 'liftedShadow', 0, 1, 0.01);
   add(look, params.look, 'shadowBlurHeight', 1, 100, 1);
   add(look, params.look, 'shadowScatter', 0, 4, 0.05);
+  add(look, params.look, 'indentDepth', 0, 5, 0.05);
+  add(look, params.look, 'indentWidth', 0.5, 12, 0.5);
+  add(look, params.look, 'indentCrease', 0, 1, 0.01);
 
   const holo = gui.addFolder('Holo & glitter');
   add(holo, params.holo, 'enabled');

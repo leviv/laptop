@@ -7,6 +7,9 @@ import * as THREE from 'three';
 export const shared = {
   uTime: { value: 0 },
   uPointer: { value: new THREE.Vector2(0, 0) },
+  // top-down map of how many stuck stickers cover each point of the lid
+  uHeight: { value: null as THREE.Texture | null },
+  uSurface: { value: new THREE.Vector2(1, 1) },
 };
 
 export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
@@ -38,6 +41,14 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uTwinkle: { value: 1.4 },
       uGlitterSharp: { value: 7 },
       uGlitterBase: { value: 0.18 },
+      // indent over stickers underneath
+      uHeight: shared.uHeight,
+      uSurface: shared.uSurface,
+      uSelfInMap: { value: 0 },
+      uCS: { value: new THREE.Vector2(1, 0) },
+      uIndentDepth: { value: 1.2 },
+      uIndentWidth: { value: 3 },
+      uIndentCrease: { value: 0.22 },
     },
     vertexShader: /* glsl */ `
       attribute float aWrap;
@@ -45,9 +56,11 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       varying vec3 vNormal;
       varying vec3 vWorld;
       varying float vWrap;
+      varying float vLift;
       void main() {
         vUv = uv;
         vWrap = aWrap;
+        vLift = position.z;
         vNormal = normalize(mat3(modelMatrix) * normal);
         vec4 w = modelMatrix * vec4(position, 1.0);
         vWorld = w.xyz;
@@ -80,10 +93,30 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uniform float uTwinkle;
       uniform float uGlitterSharp;
       uniform float uGlitterBase;
+      uniform sampler2D uHeight;
+      uniform vec2 uSurface;
+      uniform float uSelfInMap;
+      uniform vec2 uCS;
+      uniform float uIndentDepth;
+      uniform float uIndentWidth;
+      uniform float uIndentCrease;
       varying vec2 vUv;
       varying vec3 vNormal;
       varying vec3 vWorld;
       varying float vWrap;
+      varying float vLift;
+
+      float selfAlpha(vec2 uv) {
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+        return texture2D(map, uv).a;
+      }
+      // stack height of whatever is stuck under this sheet at a world offset,
+      // in sticker thicknesses (this sheet's own footprint removed)
+      float under(vec2 off) {
+        float n = texture2D(uHeight, (vWorld.xy + off) / uSurface + 0.5).r;
+        vec2 loc = vec2(uCS.x * off.x + uCS.y * off.y, -uCS.y * off.x + uCS.x * off.y);
+        return n - uSelfInMap * selfAlpha(vUv + loc / uSize);
+      }
 
       vec3 hsv2rgb(vec3 c) {
         vec3 p = abs(fract(c.xxx + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
@@ -119,6 +152,22 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
         if (tex.a < 0.02) discard;
         vec3 n = normalize(vNormal);
         if (!gl_FrontFacing) n = -n;
+
+        // the sheet climbs over the edges of stickers underneath: tilt the
+        // normal by the slope of the stack height, and shade the foot of the step
+        float crease = 0.0;
+        float contact = 1.0 - smoothstep(2.0, 8.0, vLift);
+        if (gl_FrontFacing && uIndentDepth > 0.0 && contact > 0.0) {
+          float dw = uIndentWidth;
+          float hc = under(vec2(0.0));
+          float hx1 = under(vec2(dw, 0.0)), hx0 = under(vec2(-dw, 0.0));
+          float hy1 = under(vec2(0.0, dw)), hy0 = under(vec2(0.0, -dw));
+          vec2 slope = vec2(hx1 - hx0, hy1 - hy0) * (uIndentDepth * contact / (2.0 * dw));
+          n = normalize(vec3(n.xy - slope, n.z));
+          float foot = max(0.0, (hx1 + hx0 + hy1 + hy0) * 0.25 - hc);
+          crease = clamp(foot * uIndentCrease * contact, 0.0, 0.6);
+        }
+
         vec3 L = normalize(uLightDir);
         vec3 V = vec3(0.0, 0.0, 1.0);
         vec3 H = normalize(L + V);
@@ -129,6 +178,7 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
         vec3 col;
         if (gl_FrontFacing) {
           col = tex.rgb * diff + vec3(spec * uGloss) + rim * 0.08;
+          col *= 1.0 - crease;
 
           if (uHoloKind != 0 && uHoloStrength > 0.0) {
             float lum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
@@ -179,6 +229,35 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
     transparent: true,
     depthWrite: true,
     alphaToCoverage: true,
+  });
+}
+
+// Height pass: each stuck sticker adds its alpha into a top-down map of the lid,
+// so a point covered by two stickers reads 2.0. Additive blend, no depth.
+export function makeHeightMaterial(map: THREE.Texture) {
+  return new THREE.ShaderMaterial({
+    uniforms: { map: { value: map } },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D map;
+      varying vec2 vUv;
+      void main() {
+        gl_FragColor = vec4(texture2D(map, vUv).a);
+      }
+    `,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneFactor,
   });
 }
 

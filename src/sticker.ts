@@ -3,7 +3,7 @@ import { loadImage } from './util';
 import { params } from './params';
 import { CurlProfile } from './profile';
 import { type Mask, imageToMask, sampleAlpha, traceOutline } from './contour';
-import { makeStickerMaterial, makeShadowMaterial, makeBlurredAlpha } from './shaders';
+import { makeStickerMaterial, makeShadowMaterial, makeBlurredAlpha, makeHeightMaterial } from './shaders';
 import { EFFECTS, KINDS, MASK_MODES } from './effects';
 import { SURFACE, surfaceSDF } from './laptop';
 import * as audio from './audio';
@@ -49,6 +49,7 @@ export class Sticker {
   group = new THREE.Group();
   mesh!: THREE.Mesh;
   shadow!: THREE.Mesh;
+  heightMesh!: THREE.Mesh; // flat footprint, drawn into the stack height map
   geo!: THREE.PlaneGeometry;
   basePos!: Float32Array;
   wrapAttr!: THREE.BufferAttribute;
@@ -136,6 +137,8 @@ export class Sticker {
     this.shadow.frustumCulled = false;
     this.mesh.frustumCulled = false;
     this.group.add(this.shadow, this.mesh);
+    this.heightMesh = new THREE.Mesh(new THREE.PlaneGeometry(this.def.w, this.def.h), makeHeightMaterial(tex));
+    this.heightMesh.frustumCulled = false;
     this.syncTransform();
   }
 
@@ -175,6 +178,18 @@ export class Sticker {
     this.group.position.set(this.anchor.x, this.anchor.y, baseZ);
     this.group.rotation.z = this.angle;
     if (this.shadowMat) this.shadowMat.uniforms.uBaseZ.value = baseZ;
+    const stuck = this.state === 'stuck';
+    if (this.heightMesh) {
+      // only stuck stickers count as "underneath"
+      this.heightMesh.position.set(this.anchor.x, this.anchor.y, 0);
+      this.heightMesh.rotation.z = this.angle;
+      this.heightMesh.visible = stuck;
+    }
+    if (this.material) {
+      const u = this.material.uniforms;
+      u.uSelfInMap.value = stuck ? 1 : 0;
+      u.uCS.value.set(Math.cos(this.angle), Math.sin(this.angle));
+    }
   }
 
   // ---- coordinate helpers -------------------------------------------------
@@ -624,6 +639,9 @@ export class Sticker {
     u.uBacking.value.set(L.backingTint);
     u.uBackingSheen.value = L.backingSheen;
     u.uWrapShade.value = params.wrap.shade;
+    u.uIndentDepth.value = L.indentDepth;
+    u.uIndentWidth.value = L.indentWidth;
+    u.uIndentCrease.value = L.indentCrease;
     const Hh = params.holo;
     const fx = EFFECTS[this.def.id];
     u.uHoloStrength.value = fx && Hh.enabled ? fx.strength * Hh.strength : 0;
@@ -649,6 +667,8 @@ export class Sticker {
     this.geo.dispose();
     this.material.dispose();
     this.shadowMat.dispose();
+    this.heightMesh.geometry.dispose();
+    (this.heightMesh.material as THREE.Material).dispose();
   }
 }
 

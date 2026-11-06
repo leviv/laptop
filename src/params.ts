@@ -44,6 +44,9 @@ export const DEFAULTS = {
     liftedShadow: 0.32,
     shadowBlurHeight: 26, // px height over which the shadow softens
     shadowScatter: 1, // how far the soft shadow spreads
+    indentDepth: 1.2, // relief where a sticker lies over the edge of another
+    indentWidth: 3, // px — how wide the ridge is (vinyl can't bend sharply)
+    indentCrease: 0.22, // shading at the foot of the step
   },
   holo: {
     enabled: true,

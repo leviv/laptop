@@ -36,6 +36,25 @@ function redrawLid() {
   lid.position.z = -(params.wrap.edgeRadius + 40);
 }
 
+// ---- stack height map ----
+// Top-down render of every stuck sticker's footprint, additive, so the sticker
+// shader can feel the edges of whatever it lands on.
+const HEIGHT_SCALE = 2;
+const heightRT = new THREE.WebGLRenderTarget(SURFACE.w * HEIGHT_SCALE, SURFACE.h * HEIGHT_SCALE, {
+  type: THREE.HalfFloatType,
+  format: THREE.RGBAFormat,
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter,
+  depthBuffer: false,
+  stencilBuffer: false,
+  generateMipmaps: false,
+});
+const heightScene = new THREE.Scene();
+const heightCam = new THREE.OrthographicCamera(-SURFACE.w / 2, SURFACE.w / 2, SURFACE.h / 2, -SURFACE.h / 2, 1, 3000);
+heightCam.position.z = 1000;
+shared.uHeight.value = heightRT.texture;
+shared.uSurface.value.set(SURFACE.w, SURFACE.h);
+
 // ---- stickers ----
 const stickers: Sticker[] = [];
 let order: Sticker[] = []; // bottom → top
@@ -55,6 +74,7 @@ async function loadStickers() {
   for (const s of list) {
     stickers.push(s);
     scene.add(s.group);
+    heightScene.add(s.heightMesh);
   }
   order = [...stickers];
   relayer();
@@ -175,6 +195,9 @@ function step(dt: number) {
   shared.uTime.value += dt;
   for (const s of stickers) s.update(dt);
   outline.update(selected, view, dt);
+  renderer.setRenderTarget(heightRT);
+  renderer.render(heightScene, heightCam);
+  renderer.setRenderTarget(null);
   renderer.render(scene, view.camera);
 }
 function frame(now: number) {
