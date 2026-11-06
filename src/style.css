@@ -1,0 +1,73 @@
+:root {
+  --bg: #fbfbfa;
+  --grid: #ebebe8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: center center;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #1e1e1e;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#app canvas {
+  display: block;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+.outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.hint {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: #8a8a86;
+  pointer-events: none;
+}
+
+.lil-gui.sticker-gui {
+  --background-color: #fff;
+  --text-color: #1e1e1e;
+  --title-background-color: #f0f0ef;
+  --title-text-color: #1e1e1e;
+  --widget-color: #f4f4f3;
+  --hover-color: #ececea;
+  --focus-color: #e3e3e1;
+  --number-color: #0d99ff;
+  --string-color: #0d99ff;
+  --font-size: 11px;
+  --input-font-size: 11px;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.08);
+  border-radius: 6px;
+  overflow: hidden;
+}
