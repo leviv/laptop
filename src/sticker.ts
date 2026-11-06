@@ -3,7 +3,7 @@ import { loadImage } from './util';
 import { params } from './params';
 import { CurlProfile } from './profile';
 import { type Mask, imageToMask, sampleAlpha, traceOutline } from './contour';
-import { makeStickerMaterial, makeShadowMaterial, makeBlurredAlpha, makeHeightMaterial } from './shaders';
+import { makeStickerMaterial, makeShadowMaterial, makeBlurredAlpha, makeHeightMaterial, INSET } from './shaders';
 import { EFFECTS, KINDS, MASK_MODES } from './effects';
 import { SURFACE, surfaceSDF } from './laptop';
 import * as audio from './audio';
@@ -24,6 +24,7 @@ export type State = 'stuck' | 'peeling' | 'unpeeling' | 'carried' | 'sticking';
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
 const tmpN = { x: 0, y: 0 };
+const tmpP = new THREE.Vector2();
 const prof = new Float32Array(3);
 
 function smoothstep(a: number, b: number, x: number) {
@@ -44,6 +45,12 @@ function smin(a: number, b: number, k: number, out: number[]) {
 }
 const sminOut = [0, 0];
 
+/** in-plane span of a flap of material length F: arc of radius R, then straight at angle th */
+function flapProj(F: number, R: number, th: number) {
+  if (F <= R * th) return R * Math.sin(F / R);
+  return R * Math.sin(th) + (F - R * th) * Math.cos(th);
+}
+
 export class Sticker {
   def: StickerDef;
   group = new THREE.Group();
@@ -51,9 +58,12 @@ export class Sticker {
   shadow!: THREE.Mesh;
   heightMesh!: THREE.Mesh; // flat footprint, drawn into the stack height map
   geo!: THREE.PlaneGeometry;
+  shadowGeo!: THREE.PlaneGeometry; // 1/INSET larger, so the blurred shadow has room
   basePos!: Float32Array;
+  shadowBase!: Float32Array;
   wrapAttr!: THREE.BufferAttribute;
   mask!: Mask;
+  img!: HTMLImageElement;
   outline: [number, number][] = [];
   material!: THREE.ShaderMaterial;
   shadowMat!: THREE.ShaderMaterial;
@@ -66,6 +76,7 @@ export class Sticker {
 
   // interaction
   grab = new THREE.Vector2(); // local flat coords of the held point
+  cornerGrab = new THREE.Vector2(); // where the reset animation pinches it
   peelDir = new THREE.Vector2(0, -1);
   peelDirLocked = false;
   p = 0;
@@ -74,6 +85,9 @@ export class Sticker {
   dragDist = 0;
   downWorld = new THREE.Vector2();
   pointer = new THREE.Vector2();
+  pointerPrev = new THREE.Vector2();
+  pointerVel = new THREE.Vector2();
+  fingerLocal = new THREE.Vector2(); // finger travel since pickup, local, while still peeling
   target = new THREE.Vector2();
   vel = new THREE.Vector2();
   angVel = 0;
@@ -89,6 +103,8 @@ export class Sticker {
   stickR = 0;
   landed = false;
   squashAmt = 0;
+  auto = false; // flying home on its own (reset)
+  home = new THREE.Vector2();
   profile = new CurlProfile();
 
   constructor(def: StickerDef) {
@@ -101,8 +117,20 @@ export class Sticker {
     const img = new Image();
     img.src = this.def.src;
     await loadImage(img);
+    this.img = img;
     this.mask = imageToMask(img, 256);
     this.outline = traceOutline(this.mask);
+    const { w, h } = this.def;
+    let best = -1;
+    for (const [u, v] of this.outline) {
+      const lx = (u - 0.5) * w,
+        ly = (0.5 - v) * h;
+      const r = lx * lx + ly * ly;
+      if (r > best) {
+        best = r;
+        this.cornerGrab.set(lx * 0.8, ly * 0.8);
+      }
+    }
 
     // rasterise at a fixed resolution so SVGs and PNGs both come out crisp
     const texScale = Math.min(4, 1024 / Math.max(this.def.w, this.def.h));
@@ -116,10 +144,11 @@ export class Sticker {
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.anisotropy = 8;
     tex.needsUpdate = true;
-    const blurred = makeBlurredAlpha(img);
 
     this.buildGeometry();
     this.material = makeStickerMaterial(tex, new THREE.Vector2(this.def.w, this.def.h));
+    // each sticker keeps its own "light" position for the foil; it only moves while held
+    this.material.uniforms.uPointer.value.set(this.def.x + (Math.random() - 0.5) * 900, this.def.y + (Math.random() - 0.5) * 600);
     const fx = EFFECTS[this.def.id];
     if (fx) {
       const u = this.material.uniforms;
@@ -130,10 +159,10 @@ export class Sticker {
       u.uFlake.value = fx.flake ?? 2.5;
       u.uDensity.value = fx.density ?? 0.5;
     }
-    this.shadowMat = makeShadowMaterial(tex, blurred);
+    this.shadowMat = makeShadowMaterial(tex, makeBlurredAlpha(img, params.look.shadowSoftness));
     this.shadowMat.uniforms.uSize.value.set(this.def.w, this.def.h);
     this.mesh = new THREE.Mesh(this.geo, this.material);
-    this.shadow = new THREE.Mesh(this.geo, this.shadowMat);
+    this.shadow = new THREE.Mesh(this.shadowGeo, this.shadowMat);
     this.shadow.frustumCulled = false;
     this.mesh.frustumCulled = false;
     this.group.add(this.shadow, this.mesh);
@@ -147,17 +176,27 @@ export class Sticker {
     const seg = Math.max(4, params.mesh.segments | 0);
     const sx = w >= h ? seg : Math.max(4, Math.round((seg * w) / h));
     const sy = h > w ? seg : Math.max(4, Math.round((seg * h) / w));
-    const old = this.geo;
+    const old = this.geo,
+      oldS = this.shadowGeo;
     this.geo = new THREE.PlaneGeometry(w, h, sx, sy);
     this.basePos = new Float32Array(this.geo.attributes.position.array as Float32Array);
     this.wrapAttr = new THREE.BufferAttribute(new Float32Array(this.geo.attributes.position.count), 1);
     this.geo.setAttribute('aWrap', this.wrapAttr);
+    this.shadowGeo = new THREE.PlaneGeometry(w / INSET, h / INSET, sx, sy);
+    this.shadowBase = new Float32Array(this.shadowGeo.attributes.position.array as Float32Array);
     if (this.mesh) {
       this.mesh.geometry = this.geo;
-      this.shadow.geometry = this.geo;
+      this.shadow.geometry = this.shadowGeo;
       old?.dispose();
+      oldS?.dispose();
     }
     this.dirty = true;
+  }
+
+  rebakeShadow() {
+    const u = this.shadowMat.uniforms;
+    (u.uBlur.value as THREE.Texture).dispose();
+    u.uBlur.value = makeBlurredAlpha(this.img, params.look.shadowSoftness);
   }
 
   setLayer(i: number) {
@@ -213,14 +252,40 @@ export class Sticker {
   }
 
   hitTest(wx: number, wy: number) {
-    if (this.state !== 'stuck') return false;
+    // a landing sticker can be grabbed again as soon as it has touched down
+    const grabbable = this.state === 'stuck' || (this.state === 'sticking' && this.landed);
+    if (!grabbable) return false;
     const l = this.worldToLocal(wx, wy, new THREE.Vector2());
     return this.alphaAtLocal(l.x, l.y) > 0.5;
   }
 
   // ---- interaction --------------------------------------------------------
 
+  private startPeel(wx: number, wy: number) {
+    this.computeExtents();
+    this.state = 'peeling';
+    this.p = this.pPrev = 0;
+    this.holdTime = 0;
+    this.dragDist = 0;
+    this.downWorld.set(wx, wy);
+    this.pointer.set(wx, wy);
+    this.pointerPrev.set(wx, wy);
+    this.pointerVel.set(0, 0);
+    this.fingerLocal.set(0, 0);
+    this.vel.set(0, 0);
+    this.angVel = 0;
+    this.bend.set(0, 0);
+    this.carriedBlend = 0;
+    this.hoverTarget = 0;
+    this.syncTransform();
+    this.mesh.renderOrder = 200;
+    this.shadow.renderOrder = 150;
+  }
+
   beginPeel(wx: number, wy: number) {
+    if (this.state === 'sticking') this.finishStick(false);
+    if (this.state !== 'stuck') return;
+    this.auto = false;
     this.worldToLocal(wx, wy, this.grab);
     const g = this.grab;
     const small = g.length() < Math.min(this.def.w, this.def.h) * 0.12;
@@ -231,22 +296,22 @@ export class Sticker {
       this.peelDir.copy(g).multiplyScalar(-1).normalize();
       this.peelDirLocked = true;
     }
-    this.computeExtents();
-    this.state = 'peeling';
-    this.p = this.pPrev = 0;
-    this.holdTime = 0;
-    this.dragDist = 0;
-    this.downWorld.set(wx, wy);
-    this.pointer.set(wx, wy);
-    this.vel.set(0, 0);
-    this.angVel = 0;
     this.angle0 = this.angle;
-    this.bend.set(0, 0);
-    this.carriedBlend = 0;
-    this.hoverTarget = 0;
-    this.syncTransform();
-    this.mesh.renderOrder = 200;
-    this.shadow.renderOrder = 150;
+    this.startPeel(wx, wy);
+  }
+
+  /** peel itself off a corner, carry itself home and stick back down (reset) */
+  beginAutoReturn() {
+    if (this.state !== 'stuck') return false;
+    this.auto = true;
+    this.home.set(this.def.x, this.def.y);
+    this.grab.copy(this.cornerGrab);
+    this.peelDir.copy(this.grab).multiplyScalar(-1).normalize();
+    this.peelDirLocked = true;
+    this.angle0 = this.def.rotation * DEG;
+    this.localToWorld(this.grab.x, this.grab.y, tmpP);
+    this.startPeel(tmpP.x, tmpP.y);
+    return true;
   }
 
   computeExtents() {
@@ -300,24 +365,24 @@ export class Sticker {
     this.stickR = 0;
     this.landed = false;
     this.squashAmt = 0;
-    this.angle0 = this.angle;
-    this.target.copy(this.clampedTarget());
+    this.angle0 = this.auto ? this.def.rotation * DEG : this.angle;
+    this.target.copy(this.clampedTarget(this.pointer));
   }
 
-  /** where the anchor should go so the held point lands inside the lid */
-  clampedTarget() {
+  /** where the anchor should go so the held point (at `pt`) lands inside the lid */
+  clampedTarget(pt: THREE.Vector2) {
     const g = new THREE.Vector2(this.grab.x, this.grab.y).rotateAround(new THREE.Vector2(), this.angle);
-    const want = new THREE.Vector2(this.pointer.x - g.x, this.pointer.y - g.y);
+    const want = new THREE.Vector2(pt.x - g.x, pt.y - g.y);
     // keep the grab point on the flat face with a margin
     const margin = params.wrap.edgeRadius + 14;
-    const gp = new THREE.Vector2(this.pointer.x, this.pointer.y);
+    const gp = new THREE.Vector2(pt.x, pt.y);
     for (let i = 0; i < 4; i++) {
       const d = surfaceSDF(gp.x, gp.y, SURFACE, tmpN) + margin;
       if (d <= 0) break;
       gp.x -= tmpN.x * d;
       gp.y -= tmpN.y * d;
     }
-    want.add(gp).sub(this.pointer);
+    want.add(gp).sub(pt);
     return want;
   }
 
@@ -328,6 +393,14 @@ export class Sticker {
     const P = params;
     this.hoverH += (this.hoverTarget * P.drag.hoverLift - this.hoverH) * (1 - Math.exp(-dt * 22));
 
+    if (this.state !== 'stuck') {
+      // smoothed pointer velocity, used to lead the carry spring
+      const f = 1 - Math.exp(-dt * 30);
+      this.pointerVel.x += ((this.pointer.x - this.pointerPrev.x) / dt - this.pointerVel.x) * f;
+      this.pointerVel.y += ((this.pointer.y - this.pointerPrev.y) / dt - this.pointerVel.y) * f;
+      this.pointerPrev.copy(this.pointer);
+    }
+
     switch (this.state) {
       case 'stuck':
         if (this.hoverH > 0.01 || this.dirty) this.updateGeometry();
@@ -335,6 +408,7 @@ export class Sticker {
 
       case 'peeling': {
         this.holdTime += dt;
+        this.worldToLocal(this.pointer.x, this.pointer.y, this.fingerLocal).sub(this.grab);
         const raw = Math.min(1, Math.max(this.holdTime / P.peel.holdDuration, this.dragDist / P.peel.dragDistance));
         const eased = raw * raw * (3 - 2 * raw);
         this.pPrev = this.p;
@@ -342,12 +416,7 @@ export class Sticker {
         this.carriedBlend = smoothstep(0.6, 1, this.p);
         const adv = (this.p - this.pPrev) * this.sMax;
         audio.peelTick(adv, adv / dt);
-        if (this.p >= 1) {
-          this.state = 'carried';
-          audio.popFree();
-          // the spring starts from wherever the sheet actually is
-          this.vel.set(0, 0);
-        }
+        if (this.p >= 1) this.enterCarried();
         break;
       }
 
@@ -362,9 +431,24 @@ export class Sticker {
 
       case 'carried': {
         this.carriedBlend = Math.min(1, this.carriedBlend + dt / 0.16);
-        this.target.copy(this.clampedTarget());
+        if (this.auto) {
+          // the "finger" is wherever the grab point sits once the sticker is home
+          const c = Math.cos(this.angle),
+            s = Math.sin(this.angle),
+            g = this.grab;
+          this.pointer.set(this.home.x + g.x * c - g.y * s, this.home.y + g.x * s + g.y * c);
+          this.target.copy(this.clampedTarget(this.pointer));
+        } else {
+          // lead the pointer by the spring's steady-state lag so the sheet sits under the finger
+          const lag = (P.drag.followDamping / P.drag.followStiffness) * P.drag.followLead;
+          tmpP.set(this.pointer.x + this.pointerVel.x * lag, this.pointer.y + this.pointerVel.y * lag);
+          this.target.copy(this.clampedTarget(tmpP));
+        }
         this.springStep(dt);
         this.swingStep(dt, true);
+        if (this.auto && this.anchor.distanceTo(this.target) < 3 && this.vel.length() < 90) {
+          this.release(this.pointer.x, this.pointer.y);
+        }
         break;
       }
 
@@ -392,13 +476,33 @@ export class Sticker {
     this.updateGeometry();
   }
 
+  private enterCarried() {
+    this.state = 'carried';
+    audio.popFree();
+    // the flap has been following the finger; fold that travel into the anchor
+    const fl = this.fingerLocal;
+    const c = Math.cos(this.angle),
+      s = Math.sin(this.angle);
+    this.anchor.x += fl.x * c - fl.y * s;
+    this.anchor.y += fl.x * s + fl.y * c;
+    fl.set(0, 0);
+    this.vel.copy(this.pointerVel);
+    this.syncTransform();
+  }
+
   finishStick(playSeal: boolean) {
     this.state = 'stuck';
     this.p = 0;
     this.squashAmt = 0;
     this.bend.set(0, 0);
     this.angVel = 0;
+    this.fingerLocal.set(0, 0);
     if (this.landed) this.anchor.copy(this.target);
+    if (this.auto && this.landed) {
+      this.anchor.copy(this.home);
+      this.angle = this.def.rotation * DEG;
+    }
+    this.auto = false;
     this.landed = false;
     this.mesh.renderOrder = 10 + this.layer;
     this.shadow.renderOrder = 5;
@@ -462,11 +566,6 @@ export class Sticker {
 
   updateGeometry() {
     const P = params;
-    const pos = this.geo.attributes.position as THREE.BufferAttribute;
-    const arr = pos.array as Float32Array;
-    const base = this.basePos;
-    const wrap = this.wrapAttr.array as Float32Array;
-    const n = pos.count;
     const { w, h } = this.def;
     const g = this.grab,
       d = this.peelDir;
@@ -476,18 +575,44 @@ export class Sticker {
     const carryW = st === 'peeling' || st === 'unpeeling' || st === 'carried' ? this.carriedBlend : 0;
     const stickW = st === 'sticking' ? 1 : 0;
 
-    // peel profile for this frame
+    // ---- peel profile for this frame, and how the flap follows the finger ----
     const F = this.p * this.sMax;
+    const flx = this.fingerLocal.x,
+      fly = this.fingerLocal.y;
+    let ex = 0,
+      ey = 0; // extra in-plane travel of the grab point so it sits under the finger
     if (peelW > 0) {
-      this.profile.build(
-        F - this.sMin + 2,
-        P.peel.curlRadius,
-        P.peel.liftAngle * DEG,
-        F,
-        P.peel.tailAngle * DEG,
-        P.peel.tailRelax,
-        P.peel.frontSoftness,
-      );
+      const R = P.peel.curlRadius;
+      let lift = P.peel.liftAngle * DEG;
+      // the flap spans from the front to the finger; if the finger has been pulled
+      // back toward the front, the flap must stand steeper (and can fold right over)
+      const along = flx * d.x + fly * d.y;
+      const span = F - along;
+      if (F > R * lift + 1 && span < flapProj(F, R, lift)) {
+        let lo = lift,
+          hi = 165 * DEG;
+        for (let i = 0; i < 12; i++) {
+          const mid = (lo + hi) * 0.5;
+          if (flapProj(F, R, mid) > span) lo = mid;
+          else hi = mid;
+        }
+        lift = (lo + hi) * 0.5;
+      }
+      this.profile.build(F - this.sMin + 2, R, lift, F, P.peel.tailAngle * DEG, P.peel.tailRelax, P.peel.frontSoftness);
+      this.profile.sample(F, prof);
+      const shiftG = F - prof[0]; // where the profile already puts the grab point
+      ex = flx - shiftG * d.x;
+      ey = fly - shiftG * d.y;
+      // cap the residual so the flap never visibly stretches
+      const cap = prof[0] * 0.45 + 6;
+      const m = Math.hypot(ex, ey);
+      if (m > cap) {
+        ex *= cap / m;
+        ey *= cap / m;
+      }
+      const ramp = smoothstep(0, 0.15, this.p);
+      ex *= ramp;
+      ey *= ramp;
     }
     // lay-down profile
     let hDrop = 0,
@@ -514,114 +639,126 @@ export class Sticker {
     const ax = this.anchor.x,
       ay = this.anchor.y;
     const hover = this.hoverH;
+    const invF = 1 / Math.max(1e-3, F);
 
-    for (let i = 0; i < n; i++) {
-      const bxi = base[i * 3],
-        byi = base[i * 3 + 1];
-      let x = bxi,
-        y = byi,
-        z = 0;
+    const deform = (base: Float32Array, arr: Float32Array, wrap: Float32Array | null, n: number) => {
+      for (let i = 0; i < n; i++) {
+        const bxi = base[i * 3],
+          byi = base[i * 3 + 1];
+        let x = bxi,
+          y = byi,
+          z = 0;
 
-      if (st === 'stuck') {
-        if (hover > 0) {
-          const e = Math.max(Math.abs(bxi) / (w / 2), Math.abs(byi) / (h / 2));
-          z = hover * (0.7 + 0.6 * e * e);
-        }
-      } else {
-        let px = 0,
-          py = 0,
-          pz = 0;
-        const rx = bxi - g.x,
-          ry = byi - g.y;
-
-        if (peelW > 0) {
-          const s = rx * d.x + ry * d.y;
-          const u = F - s;
-          if (u <= 0) {
-            px = bxi;
-            py = byi;
-            pz = 0;
-          } else {
-            this.profile.sample(u, prof);
-            const shift = u - prof[0];
-            smin(prof[1], maxLift, 24, sminOut);
-            const zz = sminOut[0];
-            const sh = shift * (0.35 + 0.65 * sminOut[1]);
-            px = bxi + d.x * sh;
-            py = byi + d.y * sh;
-            pz = zz;
+        if (st === 'stuck') {
+          if (hover > 0) {
+            const e = Math.max(Math.abs(bxi) / (w / 2), Math.abs(byi) / (h / 2));
+            z = hover * (0.7 + 0.6 * e * e);
           }
-        }
-
-        let cx = 0,
-          cy = 0,
-          cz = 0;
-        if (carryW > 0 || fadeCarry > 0) {
-          const s = rx * d.x + ry * d.y;
-          const far = Math.max(0, s / this.sMax);
-          cz = carryH + curl * far * far - (bx * rx + by * ry);
-          cx = bxi;
-          cy = byi;
-        }
-
-        if (stickW > 0) {
-          const rho = Math.hypot(rx, ry);
-          const u = rho - this.stickR;
-          let sx = bxi,
-            sy = byi,
-            sz = 0;
-          if (u > 0) {
-            this.profile.sample(u, prof);
-            const zRaw = hDrop + prof[1];
-            smin(zRaw, hTop + hDrop, 20, sminOut);
-            sz = Math.max(0, sminOut[0]);
-            const shift = (u - prof[0]) * (0.3 + 0.7 * sminOut[1]);
-            const inv = rho > 1e-6 ? 1 / rho : 0;
-            sx = bxi - rx * inv * shift;
-            sy = byi - ry * inv * shift;
-          }
-          // residual carry shape fades out during the drop
-          const extra = (cz - carryH) * fadeCarry;
-          x = sx * squash;
-          y = sy * squash;
-          z = sz + Math.max(-sz, extra);
         } else {
-          x = px * peelW + cx * carryW;
-          y = py * peelW + cy * carryW;
-          z = pz * peelW + cz * carryW;
-        }
-      }
+          let px = 0,
+            py = 0,
+            pz = 0;
+          const rx = bxi - g.x,
+            ry = byi - g.y;
 
-      // ---- wrap around the lid edge (world space) ----
-      let wx = ax + x * cA - y * sA;
-      let wy = ay + x * sA + y * cA;
-      let wrapV = 0;
-      const dist = surfaceSDF(wx, wy, SURFACE, tmpN) + edgeR;
-      if (dist > 0) {
-        const a = 1 - smoothstep(0, fadeH, z);
-        if (a > 0) {
-          const phi = Math.min(dist / edgeR, Math.PI / 2);
-          const inPlane = edgeR * Math.sin(phi);
-          const drop = edgeR * (1 - Math.cos(phi)) + Math.max(0, dist - (edgeR * Math.PI) / 2);
-          wx -= tmpN.x * (dist - inPlane) * a;
-          wy -= tmpN.y * (dist - inPlane) * a;
-          z -= drop * a;
-          wrapV = a * Math.min(1, phi / (Math.PI / 2));
-          // back to local
-          const dx = wx - ax,
-            dy = wy - ay;
-          x = dx * cA + dy * sA;
-          y = -dx * sA + dy * cA;
+          if (peelW > 0) {
+            const s = rx * d.x + ry * d.y;
+            const u = F - s;
+            if (u <= 0) {
+              px = bxi;
+              py = byi;
+              pz = 0;
+            } else {
+              this.profile.sample(u, prof);
+              const shift = u - prof[0];
+              smin(prof[1], maxLift, 24, sminOut);
+              const zz = sminOut[0];
+              const sh = shift * (0.35 + 0.65 * sminOut[1]);
+              // lifted material follows the finger; the front stays put
+              const fw = smoothstep(0, 1, u * invF);
+              px = bxi + d.x * sh + ex * fw;
+              py = byi + d.y * sh + ey * fw;
+              pz = zz;
+            }
+          }
+
+          let cx = 0,
+            cy = 0,
+            cz = 0;
+          if (carryW > 0 || fadeCarry > 0) {
+            const s = rx * d.x + ry * d.y;
+            const far = Math.max(0, s / this.sMax);
+            cz = carryH + curl * far * far - (bx * rx + by * ry);
+            cx = bxi + flx;
+            cy = byi + fly;
+          }
+
+          if (stickW > 0) {
+            const rho = Math.hypot(rx, ry);
+            const u = rho - this.stickR;
+            let sx = bxi,
+              sy = byi,
+              sz = 0;
+            if (u > 0) {
+              this.profile.sample(u, prof);
+              const zRaw = hDrop + prof[1];
+              smin(zRaw, hTop + hDrop, 20, sminOut);
+              sz = Math.max(0, sminOut[0]);
+              const shift = (u - prof[0]) * (0.3 + 0.7 * sminOut[1]);
+              const inv = rho > 1e-6 ? 1 / rho : 0;
+              sx = bxi - rx * inv * shift;
+              sy = byi - ry * inv * shift;
+            }
+            // residual carry shape fades out during the drop
+            const extra = (cz - carryH) * fadeCarry;
+            x = sx * squash;
+            y = sy * squash;
+            z = sz + Math.max(-sz, extra);
+          } else {
+            x = px * peelW + cx * carryW;
+            y = py * peelW + cy * carryW;
+            z = pz * peelW + cz * carryW;
+          }
         }
+
+        // ---- wrap around the lid edge (world space) ----
+        let wx = ax + x * cA - y * sA;
+        let wy = ay + x * sA + y * cA;
+        let wrapV = 0;
+        const dist = surfaceSDF(wx, wy, SURFACE, tmpN) + edgeR;
+        if (dist > 0) {
+          const a = 1 - smoothstep(0, fadeH, z);
+          if (a > 0) {
+            const phi = Math.min(dist / edgeR, Math.PI / 2);
+            const inPlane = edgeR * Math.sin(phi);
+            const drop = edgeR * (1 - Math.cos(phi)) + Math.max(0, dist - (edgeR * Math.PI) / 2);
+            wx -= tmpN.x * (dist - inPlane) * a;
+            wy -= tmpN.y * (dist - inPlane) * a;
+            z -= drop * a;
+            wrapV = a * Math.min(1, phi / (Math.PI / 2));
+            // back to local
+            const dx = wx - ax,
+              dy = wy - ay;
+            x = dx * cA + dy * sA;
+            y = -dx * sA + dy * cA;
+          }
+        }
+        if (wrap) wrap[i] = wrapV;
+        arr[i * 3] = x;
+        arr[i * 3 + 1] = y;
+        arr[i * 3 + 2] = z;
       }
-      wrap[i] = wrapV;
-      arr[i * 3] = x;
-      arr[i * 3 + 1] = y;
-      arr[i * 3 + 2] = z;
-    }
+    };
+
+    const pos = this.geo.attributes.position as THREE.BufferAttribute;
+    deform(this.basePos, pos.array as Float32Array, this.wrapAttr.array as Float32Array, pos.count);
     pos.needsUpdate = true;
     this.wrapAttr.needsUpdate = true;
     this.geo.computeVertexNormals();
+
+    const spos = this.shadowGeo.attributes.position as THREE.BufferAttribute;
+    deform(this.shadowBase, spos.array as Float32Array, null, spos.count);
+    spos.needsUpdate = true;
     this.dirty = false;
   }
 
@@ -660,11 +797,13 @@ export class Sticker {
     s.uLifted.value = L.liftedShadow;
     s.uBlurHeight.value = L.shadowBlurHeight;
     s.uScatter.value = L.shadowScatter;
+    s.uInset.value = INSET;
     s.uShadowZ.value = 300; // above every stuck sticker, below the carried one
   }
 
   dispose() {
     this.geo.dispose();
+    this.shadowGeo.dispose();
     this.material.dispose();
     this.shadowMat.dispose();
     this.heightMesh.geometry.dispose();

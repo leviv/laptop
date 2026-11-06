@@ -6,7 +6,6 @@ import * as THREE from 'three';
 // Uniforms shared by every sticker material (updated once per frame).
 export const shared = {
   uTime: { value: 0 },
-  uPointer: { value: new THREE.Vector2(0, 0) },
   // top-down map of how many stuck stickers cover each point of the lid
   uHeight: { value: null as THREE.Texture | null },
   uSurface: { value: new THREE.Vector2(1, 1) },
@@ -25,7 +24,7 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uWrapShade: { value: 0.5 },
       // holo / glitter
       uTime: shared.uTime,
-      uPointer: shared.uPointer,
+      uPointer: { value: new THREE.Vector2(0, 0) }, // per sticker: only moves while held
       uHoloKind: { value: 0 },
       uMaskMode: { value: 0 },
       uHoloStrength: { value: 0 },
@@ -310,11 +309,13 @@ export function makeShadowMaterial(mask: THREE.Texture, blurred: THREE.Texture) 
       varying float vH;
       void main() {
         float k = smoothstep(0.0, uBlurHeight, vH);
-        // the blurred mask sits in the central uInset of its texture; map it onto the
-        // full quad, then enlarge it with height
+        // this quad is 1/uInset larger than the sticker: the sharp mask sits in its
+        // centre, the blurred mask (drawn at uInset) fills it, with room to spread
+        vec2 uvS = (vUv - 0.5) / uInset + 0.5;
+        float inS = step(0.0, uvS.x) * step(uvS.x, 1.0) * step(0.0, uvS.y) * step(uvS.y, 1.0);
+        float sharp = texture2D(uMask, uvS).a * inS;
         vec2 grow = 1.0 + (uScatter * vH * 0.6) / uSize;
-        vec2 uvB = (vUv - 0.5) * uInset / grow + 0.5;
-        float sharp = texture2D(uMask, vUv).a;
+        vec2 uvB = (vUv - 0.5) / grow + 0.5;
         float soft = texture2D(uBlur, uvB).a;
         // contact shadow fades in with the first few px of lift
         float contact = sharp * uContact * smoothstep(0.0, 2.5, vH) * (1.0 - k);
@@ -331,8 +332,8 @@ export function makeShadowMaterial(mask: THREE.Texture, blurred: THREE.Texture) 
 
 export const INSET = 0.72;
 
-/** blurred copy of the alpha channel for the soft shadow */
-export function makeBlurredAlpha(img: HTMLImageElement, radius = 14): THREE.CanvasTexture {
+/** blurred copy of the alpha channel for the soft shadow; softness is a fraction of the sticker size */
+export function makeBlurredAlpha(img: HTMLImageElement, softness = 0.07): THREE.CanvasTexture {
   const scale = Math.min(1, 256 / Math.max(img.naturalWidth, img.naturalHeight));
   const w = Math.max(4, Math.round(img.naturalWidth * scale)),
     h = Math.max(4, Math.round(img.naturalHeight * scale));
@@ -340,9 +341,9 @@ export function makeBlurredAlpha(img: HTMLImageElement, radius = 14): THREE.Canv
   c.width = w;
   c.height = h;
   const ctx = c.getContext('2d')!;
-  // draw at ~70% so the blur has room to spread inside the quad
+  // draw at ~70% so the blur has room to spread inside the (enlarged) shadow quad
   const s = INSET;
-  ctx.filter = `blur(${radius * scale}px)`;
+  ctx.filter = `blur(${(softness * Math.max(w, h) * s).toFixed(2)}px)`;
   ctx.drawImage(img, w * (1 - s) * 0.5, h * (1 - s) * 0.5, w * s, h * s);
   ctx.filter = 'none';
   const tex = new THREE.CanvasTexture(c);

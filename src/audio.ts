@@ -23,8 +23,14 @@ export function unlockAudio() {
   if (c.state === 'suspended') c.resume();
 }
 
+let duck = 1;
+/** scale every sound (the reset animation plays dozens at once) */
+export function setDuck(d: number) {
+  duck = d;
+}
+
 function vol() {
-  return params.sound.enabled ? params.sound.volume : 0;
+  return params.sound.enabled ? params.sound.volume * duck : 0;
 }
 
 function grain(time: number, freq: number, q: number, dur: number, gain: number, type: BiquadFilterType = 'bandpass') {

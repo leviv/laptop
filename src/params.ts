@@ -3,8 +3,8 @@
 
 export const DEFAULTS = {
   peel: {
-    holdDuration: 0.32, // s to fully peel when just holding still
-    dragDistance: 90, // px of drag that also completes the peel
+    holdDuration: 0.28, // s to fully peel when just holding still
+    dragDistance: 70, // px of drag that also completes the peel
     curlRadius: 58, // px — bend radius at the peel front; bigger = stiffer sheet
     liftAngle: 42, // deg — angle the lifted flap reaches at the grab point
     tailAngle: 30, // deg — the free tail behind the grab point levels off to this
@@ -13,8 +13,9 @@ export const DEFAULTS = {
     easing: 0.55, // 0 = linear peel, 1 = strong ease-out
   },
   drag: {
-    followStiffness: 420, // spring that pulls the sticker to the pointer
-    followDamping: 28,
+    followStiffness: 760, // spring that pulls the sticker to the pointer
+    followDamping: 38,
+    followLead: 0.85, // 1 = cancel the spring's lag entirely while moving
     hoverLift: 3, // px lift on hover
     carryHeight: 34, // px the sticker floats while carried
     velocityBend: 0.00025, // rigid tilt into motion (air drag feel)
@@ -41,9 +42,10 @@ export const DEFAULTS = {
     backingTint: '#eeeae2', // adhesive side colour
     backingSheen: 0.3,
     contactShadow: 0.5,
-    liftedShadow: 0.32,
-    shadowBlurHeight: 26, // px height over which the shadow softens
-    shadowScatter: 1, // how far the soft shadow spreads
+    liftedShadow: 0.26,
+    shadowBlurHeight: 20, // px height over which the shadow softens
+    shadowScatter: 1.4, // how far the soft shadow spreads with height
+    shadowSoftness: 0.07, // blur of the lifted shadow, as a fraction of sticker size
     indentDepth: 1.2, // relief where a sticker lies over the edge of another
     indentWidth: 3, // px — how wide the ridge is (vinyl can't bend sharply)
     indentCrease: 0.22, // shading at the foot of the step
@@ -55,7 +57,7 @@ export const DEFAULTS = {
     pointerInfluence: 1.0, // the pointer acts as a moving light
     tiltInfluence: 2.2, // bending the sheet sweeps the colours
     moveInfluence: 0.6, // sliding across the lid shifts them too
-    shimmerSpeed: 0.05, // slow idle drift
+    shimmerSpeed: 0, // idle drift; 0 = foil only shifts on the sticker you're holding
     saturation: 0.85,
     glitterTwinkle: 1.4, // how fast flakes flip as the angle changes
     glitterSharpness: 7, // higher = fewer, sharper sparkles
@@ -89,7 +91,7 @@ export const DEFAULTS = {
 
 export type Params = typeof DEFAULTS;
 
-const STORAGE_KEY = 'laptop-sticker-params-v3';
+const STORAGE_KEY = 'laptop-sticker-params-v4';
 
 function deepMerge<T>(base: T, patch: any): T {
   if (typeof base !== 'object' || base === null) return patch ?? base;

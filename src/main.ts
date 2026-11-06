@@ -7,7 +7,7 @@ import { LAYOUT } from './layout';
 import { View } from './view';
 import { Outline } from './outline';
 import { buildGui } from './gui';
-import { unlockAudio } from './audio';
+import { unlockAudio, setDuck } from './audio';
 import { shared } from './shaders';
 
 const app = document.getElementById('app')!;
@@ -65,6 +65,8 @@ let heldPointerId = -1;
 let downAt = 0;
 let downScreen = { x: 0, y: 0 };
 let moved = false;
+let wasSelected = false;
+const lastW = new THREE.Vector2();
 
 const outline = new Outline(app);
 
@@ -98,16 +100,32 @@ function applyLookAll() {
   }
 }
 
-function resetLayout() {
-  for (const s of stickers) {
-    if (s.state !== 'stuck') continue;
-    s.anchor.set(s.def.x, s.def.y);
-    s.angle = (s.def.rotation * Math.PI) / 180;
-    s.syncTransform();
-    s.dirty = true;
-  }
+// ---- reset: every sticker peels itself up and flies home, bottom layer first ----
+let resetQueue: Sticker[] = [];
+let resetClock = 0;
+let ducked = false;
+
+function startReset() {
+  selected = null;
   order = [...stickers];
   relayer();
+  resetQueue = stickers.filter((s) => s !== held && s.state === 'stuck');
+  resetClock = 0;
+  setDuck(0.3);
+  ducked = true;
+}
+
+function stepReset(dt: number) {
+  if (resetQueue.length) {
+    resetClock += dt;
+    while (resetQueue.length && resetClock >= 0) {
+      resetQueue.shift()!.beginAutoReturn();
+      resetClock -= 0.035;
+    }
+  } else if (ducked && !stickers.some((s) => s.auto)) {
+    setDuck(1);
+    ducked = false;
+  }
 }
 
 // ---- pointer ----
@@ -138,18 +156,26 @@ canvas.addEventListener('pointerdown', (e) => {
   downAt = performance.now();
   downScreen = { x: e.clientX, y: e.clientY };
   moved = false;
+  // the selection ring goes away the moment a drag starts
+  wasSelected = selected === s;
+  selected = null;
   bringToTop(s);
   view.screenToWorld(e.clientX, e.clientY, tmpW);
+  lastW.copy(tmpW);
   s.beginPeel(tmpW.x, tmpW.y);
   setHover(null);
   canvas.style.cursor = 'grabbing';
 });
 
 canvas.addEventListener('pointermove', (e) => {
-  view.screenToWorld(e.clientX, e.clientY, shared.uPointer.value);
   if (held && e.pointerId === heldPointerId) {
     if (!moved && Math.hypot(e.clientX - downScreen.x, e.clientY - downScreen.y) > 4) moved = true;
     view.screenToWorld(e.clientX, e.clientY, tmpW);
+    // the held sticker's foil "light" rides along with the pointer; nothing else reacts
+    const hp = held.material.uniforms.uPointer.value as THREE.Vector2;
+    hp.x += tmpW.x - lastW.x;
+    hp.y += tmpW.y - lastW.y;
+    lastW.copy(tmpW);
     held.drag(tmpW.x, tmpW.y);
     return;
   }
@@ -162,7 +188,7 @@ function endHold(e: PointerEvent) {
   const s = held;
   s.release(tmpW.x, tmpW.y);
   const tap = !moved && performance.now() - downAt < 350;
-  selected = tap ? (selected === s ? null : s) : s;
+  selected = tap ? (wasSelected ? null : s) : s;
   held = null;
   heldPointerId = -1;
   canvas.style.cursor = 'default';
@@ -193,6 +219,7 @@ resize();
 let last = performance.now();
 function step(dt: number) {
   shared.uTime.value += dt;
+  stepReset(dt);
   for (const s of stickers) s.update(dt);
   outline.update(selected, view, dt);
   renderer.setRenderTarget(heightRT);
@@ -214,10 +241,15 @@ buildGui({
     redrawLid();
     applyLookAll();
   },
-  onResetLayout: resetLayout,
+  onShadowChange: () => stickers.forEach((s) => s.rebakeShadow()),
+  onResetLayout: startReset,
+});
+document.getElementById('reset')!.addEventListener('click', () => {
+  unlockAudio();
+  startReset();
 });
 
 Promise.all([loadLid(), loadStickers()])
   .then(() => requestAnimationFrame(frame))
   .catch((e) => console.error('sticker load failed', e));
-(window as any).__lap = { stickers, scene, view, renderer, step, get order() { return order; }, get selected() { return selected; } };
+(window as any).__lap = { stickers, scene, view, renderer, step, startReset, get order() { return order; }, get selected() { return selected; } };

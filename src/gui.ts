@@ -5,6 +5,7 @@ export interface GuiHooks {
   onChange: () => void; // any param changed
   onMeshChange: () => void; // mesh resolution changed (rebuild)
   onWrapChange: () => void; // edge radius changed (redraw lid)
+  onShadowChange: () => void; // shadow softness changed (rebake)
   onResetLayout: () => void;
 }
 
@@ -34,6 +35,7 @@ export function buildGui(hooks: GuiHooks) {
   const drag = gui.addFolder('Drag');
   add(drag, params.drag, 'followStiffness', 20, 1500, 1);
   add(drag, params.drag, 'followDamping', 1, 80, 0.5);
+  add(drag, params.drag, 'followLead', 0, 1.5, 0.05);
   add(drag, params.drag, 'hoverLift', 0, 12, 0.5);
   add(drag, params.drag, 'carryHeight', 2, 120, 1);
   add(drag, params.drag, 'velocityBend', 0, 0.01, 0.0001);
@@ -66,6 +68,7 @@ export function buildGui(hooks: GuiHooks) {
   add(look, params.look, 'liftedShadow', 0, 1, 0.01);
   add(look, params.look, 'shadowBlurHeight', 1, 100, 1);
   add(look, params.look, 'shadowScatter', 0, 4, 0.05);
+  add(look, params.look, 'shadowSoftness', 0.01, 0.14, 0.005).onFinishChange(hooks.onShadowChange);
   add(look, params.look, 'indentDepth', 0, 5, 0.05);
   add(look, params.look, 'indentWidth', 0.5, 12, 0.5);
   add(look, params.look, 'indentCrease', 0, 1, 0.01);
@@ -126,6 +129,7 @@ export function buildGui(hooks: GuiHooks) {
       hooks.onChange();
       hooks.onMeshChange();
       hooks.onWrapChange();
+      hooks.onShadowChange();
       flash(gui, 'Reset to defaults');
     },
     resetLayout: () => hooks.onResetLayout(),
