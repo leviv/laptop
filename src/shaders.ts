@@ -18,7 +18,7 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uSize: { value: size },
       uLightDir: { value: new THREE.Vector3(0.5, 0.6, 0.7).normalize() },
       uGloss: { value: 0.5 },
-      uGlossSharp: { value: 40 },
+      uGlossSharp: { value: 83 },
       uBacking: { value: new THREE.Color('#eeeae2') },
       uBackingSheen: { value: 0.3 },
       uWrapShade: { value: 0.5 },
@@ -45,9 +45,12 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uSurface: shared.uSurface,
       uSelfInMap: { value: 0 },
       uCS: { value: new THREE.Vector2(1, 0) },
-      uIndentDepth: { value: 1.2 },
-      uIndentWidth: { value: 3 },
-      uIndentCrease: { value: 0.22 },
+      uIndentDepth: { value: 1.1 },
+      uIndentWidth: { value: 0.5 },
+      uIndentCrease: { value: 0.23 },
+      // marker ink drawn on this sticker
+      uInk: { value: null as THREE.Texture | null },
+      uHasInk: { value: 0 },
     },
     vertexShader: /* glsl */ `
       attribute float aWrap;
@@ -99,6 +102,8 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uniform float uIndentDepth;
       uniform float uIndentWidth;
       uniform float uIndentCrease;
+      uniform sampler2D uInk;
+      uniform float uHasInk;
       varying vec2 vUv;
       varying vec3 vNormal;
       varying vec3 vWorld;
@@ -149,6 +154,9 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       void main() {
         vec4 tex = texture2D(map, vUv);
         if (tex.a < 0.02) discard;
+        // dry-erase ink sits on top of the print (and hides any foil under it)
+        vec4 ink = uHasInk > 0.5 ? texture2D(uInk, vUv) : vec4(0.0);
+        tex.rgb = mix(tex.rgb, ink.rgb, ink.a);
         vec3 n = normalize(vNormal);
         if (!gl_FrontFacing) n = -n;
 
@@ -181,7 +189,7 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
 
           if (uHoloKind != 0 && uHoloStrength > 0.0) {
             float lum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
-            float m = finishMask(tex.rgb) * uHoloStrength;
+            float m = finishMask(tex.rgb) * uHoloStrength * (1.0 - ink.a);
             // viewing-angle proxy: pointer as a moving light, sheet tilt, lid position
             vec2 toP = (uPointer - vWorld.xy) / 500.0;
             float view = (toP.x * 0.8 + toP.y * 0.6) * uPointerInfl

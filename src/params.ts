@@ -36,7 +36,7 @@ export const DEFAULTS = {
   },
   look: {
     gloss: 0.55, // vinyl specular
-    glossSharpness: 42,
+    glossSharpness: 83,
     lightAzimuth: 125, // deg
     lightElevation: 52, // deg
     backingTint: '#eeeae2', // adhesive side colour
@@ -46,9 +46,9 @@ export const DEFAULTS = {
     shadowBlurHeight: 20, // px height over which the shadow softens
     shadowScatter: 1.4, // how far the soft shadow spreads with height
     shadowSoftness: 0.07, // blur of the lifted shadow, as a fraction of sticker size
-    indentDepth: 1.2, // relief where a sticker lies over the edge of another
-    indentWidth: 3, // px — how wide the ridge is (vinyl can't bend sharply)
-    indentCrease: 0.22, // shading at the foot of the step
+    indentDepth: 1.1, // relief where a sticker lies over the edge of another
+    indentWidth: 0.5, // px — how wide the ridge is
+    indentCrease: 0.23, // shading at the foot of the step
   },
   holo: {
     enabled: true,
