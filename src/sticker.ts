@@ -165,6 +165,16 @@ export class Sticker {
       u.uPatchy.value = fx.patchy ?? 0.5;
       u.uFlake.value = fx.flake ?? 2.5;
       u.uDensity.value = fx.density ?? 0.5;
+      if (fx.flat) {
+        u.uFlatColor.value.set(fx.flat);
+        u.uFlatten.value = fx.flatten ?? 1;
+      }
+      if (fx.tint) {
+        u.uTint.value.set(fx.tint);
+        u.uTintMix.value = fx.tintMix ?? 0.5;
+      }
+      u.uBandMul.value = fx.bands ?? 1;
+      u.uSheen.value = fx.sheen ?? 0;
     }
     this.shadowMat = makeShadowMaterial(tex, makeBlurredAlpha(img, params.look.shadowSoftness));
     this.shadowMat.uniforms.uSize.value.set(this.def.w, this.def.h);

@@ -40,6 +40,12 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uTwinkle: { value: 1.4 },
       uGlitterSharp: { value: 7 },
       uGlitterBase: { value: 0.18 },
+      uFlatColor: { value: new THREE.Color('#ffffff') },
+      uFlatten: { value: 0 },
+      uTint: { value: new THREE.Color('#ffffff') },
+      uTintMix: { value: 0 },
+      uBandMul: { value: 1 },
+      uSheen: { value: 0 },
       // indent over stickers underneath
       uHeight: shared.uHeight,
       uSurface: shared.uSurface,
@@ -95,6 +101,12 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uniform float uTwinkle;
       uniform float uGlitterSharp;
       uniform float uGlitterBase;
+      uniform vec3 uFlatColor;
+      uniform float uFlatten;
+      uniform vec3 uTint;
+      uniform float uTintMix;
+      uniform float uBandMul;
+      uniform float uSheen;
       uniform sampler2D uHeight;
       uniform vec2 uSurface;
       uniform float uSelfInMap;
@@ -154,6 +166,14 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       void main() {
         vec4 tex = texture2D(map, vUv);
         if (tex.a < 0.02) discard;
+        // some foils photograph blotchy: swap the print colour for the foil's own, keeping dark ink
+        if (uFlatten > 0.0) {
+          float plum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+          float chroma = max(tex.r, max(tex.g, tex.b)) - min(tex.r, min(tex.g, tex.b));
+          // ink is dark *and* neutral; dark creases and coloured glints in the foil are not
+          float inked = (1.0 - smoothstep(0.1, 0.3, plum)) * (1.0 - smoothstep(0.1, 0.25, chroma));
+          tex.rgb = mix(tex.rgb, uFlatColor, uFlatten * (1.0 - inked));
+        }
         // dry-erase ink sits on top of the print (and hides any foil under it)
         vec4 ink = uHasInk > 0.5 ? texture2D(uInk, vUv) : vec4(0.0);
         tex.rgb = mix(tex.rgb, ink.rgb, ink.a);
@@ -200,13 +220,16 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
 
             if (uHoloKind == 1) {
               // foil: diffraction bands + blotchy crinkle
-              float bands = (px.x * 0.7 + px.y * 0.4) * uBandScale * 0.01;
+              float bands = (px.x * 0.7 + px.y * 0.4) * uBandScale * uBandMul * 0.01;
               float crinkle = vnoise(px * 0.025) * 1.6 + vnoise(px * 0.09) * 0.5;
               float hue = fract(bands + view + crinkle * uPatchy);
-              vec3 rainbow = hsv2rgb(vec3(hue, uHoloSat, 1.0));
-              float shine = 0.6 + 0.4 * sin((bands + view) * 6.2831 + crinkle * 3.0);
+              // coloured foil: the rainbow is pulled toward the foil's own tint
+              vec3 rainbow = mix(hsv2rgb(vec3(hue, uHoloSat, 1.0)), uTint, uTintMix);
+              float shine = 0.6 + 0.4 * sin((bands + view) * 6.2831 + crinkle * 3.0 * uPatchy);
               vec3 holo = rainbow * shine;
               vec3 foiled = col * 0.55 + holo * (0.15 + 0.85 * lum);
+              // broad metallic glint over the whole sheet; it rolls as the sheet bends
+              foiled += uTint * pow(max(dot(n, H), 0.0), 10.0) * uSheen;
               // opaque dark ink hides the foil underneath
               col = mix(col, foiled, clamp(m * smoothstep(0.06, 0.32, lum), 0.0, 1.0));
             } else {
