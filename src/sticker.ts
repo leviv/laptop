@@ -168,6 +168,8 @@ export class Sticker {
       if (fx.flat) {
         u.uFlatColor.value.set(fx.flat);
         u.uFlatten.value = fx.flatten ?? 1;
+        u.uFlatDetail.value = fx.detail ?? 0.5;
+        u.uFlatLum.value = typicalLum(img);
       }
       if (fx.tint) {
         u.uTint.value.set(fx.tint);
@@ -861,3 +863,22 @@ export class Sticker {
 }
 
 export { TAU };
+
+/** median brightness of a sticker photo's non-ink pixels (for evening out a foil) */
+function typicalLum(img: HTMLImageElement | ImageBitmap): number {
+  const c = document.createElement('canvas');
+  const w = (c.width = 128);
+  const h = (c.height = 128);
+  const x = c.getContext('2d')!;
+  x.drawImage(img, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data;
+  const lums: number[] = [];
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 250) { continue; }
+    const l = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+    if (l > 0.18) { lums.push(l); }
+  }
+  if (!lums.length) { return 0.5; }
+  lums.sort((a, b) => a - b);
+  return lums[lums.length >> 1];
+}

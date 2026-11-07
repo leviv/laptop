@@ -42,6 +42,8 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uGlitterBase: { value: 0.18 },
       uFlatColor: { value: new THREE.Color('#ffffff') },
       uFlatten: { value: 0 },
+      uFlatLum: { value: 0.5 }, // the photo's typical foil brightness
+      uFlatDetail: { value: 0.5 }, // how much of the photo's creases/grain survive flattening
       uTint: { value: new THREE.Color('#ffffff') },
       uTintMix: { value: 0 },
       uBandMul: { value: 1 },
@@ -103,6 +105,8 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
       uniform float uGlitterBase;
       uniform vec3 uFlatColor;
       uniform float uFlatten;
+      uniform float uFlatLum;
+      uniform float uFlatDetail;
       uniform vec3 uTint;
       uniform float uTintMix;
       uniform float uBandMul;
@@ -172,7 +176,9 @@ export function makeStickerMaterial(map: THREE.Texture, size: THREE.Vector2) {
           float chroma = max(tex.r, max(tex.g, tex.b)) - min(tex.r, min(tex.g, tex.b));
           // ink is dark *and* neutral; dark creases and coloured glints in the foil are not
           float inked = (1.0 - smoothstep(0.1, 0.3, plum)) * (1.0 - smoothstep(0.1, 0.25, chroma));
-          tex.rgb = mix(tex.rgb, uFlatColor, uFlatten * (1.0 - inked));
+          // keep the photo's creases and grain as brightness, just evened out
+          float rel = mix(1.0, plum / max(uFlatLum, 0.05), uFlatDetail);
+          tex.rgb = mix(tex.rgb, uFlatColor * rel, uFlatten * (1.0 - inked));
         }
         // dry-erase ink sits on top of the print (and hides any foil under it)
         vec4 ink = uHasInk > 0.5 ? texture2D(uInk, vUv) : vec4(0.0);
