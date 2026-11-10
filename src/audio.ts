@@ -23,14 +23,8 @@ export function unlockAudio() {
   if (c.state === 'suspended') c.resume();
 }
 
-let duck = 1;
-/** scale every sound (the reset animation plays dozens at once) */
-export function setDuck(d: number) {
-  duck = d;
-}
-
 function vol() {
-  return params.sound.enabled ? params.sound.volume * duck : 0;
+  return params.sound.enabled ? params.sound.volume : 0;
 }
 
 function grain(time: number, freq: number, q: number, dur: number, gain: number, type: BiquadFilterType = 'bandpass') {
@@ -103,10 +97,12 @@ export function popFree() {
 /** First contact with the lid. */
 export function land(strength = 1) {
   if (!ctx || vol() === 0) return;
-  const t = ctx.currentTime;
+  landAt(ctx.currentTime, strength);
+}
+function landAt(t: number, strength: number, pitch = 1) {
   const v = vol() * params.sound.stickThump;
-  tone(t, 190, 55, 0.09, 0.5 * v * strength); // thump
-  grain(t, 900, 0.8, 0.045, 0.25 * v * strength, 'lowpass'); // pat
+  tone(t, 190 * pitch, 55 * pitch, 0.09, 0.5 * v * strength); // thump
+  grain(t, 900 * pitch, 0.8, 0.045, 0.25 * v * strength, 'lowpass'); // pat
 }
 
 /** The adhesive front spreading outward: call with px of new contact per frame. */
@@ -126,8 +122,22 @@ export function stickTick(advancePx: number) {
 /** Final seal: a crisp little snap. */
 export function seal() {
   if (!ctx || vol() === 0) return;
-  const t = ctx.currentTime;
+  sealAt(ctx.currentTime);
+}
+function sealAt(t: number, pitch = 1) {
   const v = vol() * params.sound.stickSnap;
-  grain(t, 5200, 4, 0.025, 0.18 * v);
-  tone(t, 2600, 2100, 0.03, 0.05 * v, 'triangle');
+  grain(t, 5200 * pitch, 4, 0.025, 0.18 * v);
+  tone(t, 2600 * pitch, 2100 * pitch, 0.03, 0.05 * v, 'triangle');
+}
+
+/** Reset: the stick sound three times, a hair apart, like a quick flurry of stickers landing. */
+export function resetFlurry() {
+  if (!ctx || vol() === 0) return;
+  const t0 = ctx.currentTime + 0.01;
+  const gaps = [0, 0.075, 0.16];
+  gaps.forEach((gap, i) => {
+    const pitch = 1 + (i - 1) * 0.06; // a touch lower, middle, a touch higher
+    landAt(t0 + gap, 0.8, pitch);
+    sealAt(t0 + gap + 0.035, pitch);
+  });
 }

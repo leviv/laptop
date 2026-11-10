@@ -7,7 +7,7 @@ import { LAYOUT } from './layout';
 import { View } from './view';
 import { Outline } from './outline';
 import { buildGui } from './gui';
-import { unlockAudio } from './audio';
+import { unlockAudio, resetFlurry } from './audio';
 import { shared } from './shaders';
 
 const app = document.getElementById('app')!;
@@ -112,6 +112,7 @@ function startReset() {
   // only the stickers that actually moved take part, so the stagger isn't spent on the rest
   resetQueue = stickers.filter((s) => s !== held && s.state === 'stuck' && s.awayFromHome);
   resetClock = 0;
+  if (resetQueue.length) resetFlurry();
   stepReset(0); // the first one leaves on this very frame
 }
 
