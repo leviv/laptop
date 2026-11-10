@@ -41,11 +41,12 @@ export function buildShowcase(hooks: ShowcaseHooks) {
   let closing = false;
 
   function layout(lidBottom: number, width: number, height: number) {
-    // the zone fills the strip between the lid and the bottom edge, with a little air
-    const top = lidBottom + 18;
-    const bottom = height - 18;
+    // the zone fills the strip between the lid and the bottom edge, with a little
+    // air, and keeps a MacBook trackpad's proportions (about 1.6 : 1)
+    const top = lidBottom + 16;
+    const bottom = height - 16;
     const h = Math.max(48, bottom - top);
-    const w = Math.min(460, width - 48);
+    const w = Math.min(Math.round(h * 1.6), width - 48);
     zone.style.top = `${top}px`;
     zone.style.height = `${h}px`;
     zone.style.width = `${w}px`;

@@ -251,8 +251,9 @@ function resize() {
   const w = window.innerWidth,
     h = window.innerHeight;
   renderer.setSize(w, h);
-  // keep a strip free under the lid for the drop zone
-  view.resize(w, h, h < 700 ? 112 : 150);
+  // a strip above for the button and hint, a bigger one below for the drop zone
+  const reserveBottom = Math.round(Math.min(260, Math.max(160, h * 0.26)));
+  view.resize(w, h, 64, reserveBottom);
   outline.svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   view.worldToScreen(0, -SURFACE.h / 2, screenPt);
   showcase.layout(screenPt.y, w, h);

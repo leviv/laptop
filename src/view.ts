@@ -20,15 +20,16 @@ export class View {
     this.camera.lookAt(0, 0, 0);
   }
 
-  resize(width: number, height: number, reserveBottom = 0) {
+  resize(width: number, height: number, reserveTop = 0, reserveBottom = 0) {
     this.width = width;
     this.height = height;
     this.reserveBottom = reserveBottom;
-    const margin = Math.min(width, height) < 700 ? 24 : 80;
-    const avail = height - reserveBottom;
-    this.zoom = Math.min((width - margin * 2) / SURFACE.w, (avail - margin * 2) / SURFACE.h);
-    // the lid centre should land at the middle of the free area, above the strip
-    this.centreY = (reserveBottom / 2) / this.zoom;
+    const side = Math.min(width, height) < 700 ? 20 : 48;
+    const avail = height - reserveTop - reserveBottom;
+    this.zoom = Math.min((width - side * 2) / SURFACE.w, avail / SURFACE.h);
+    // the lid centre lands at the middle of the free area between the two strips:
+    // the world point at the screen centre is below the origin by half the difference
+    this.centreY = ((reserveTop - reserveBottom) / 2) / this.zoom;
     this.camera.position.y = this.centreY;
     const hw = width / 2 / this.zoom,
       hh = height / 2 / this.zoom;
