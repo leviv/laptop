@@ -9,8 +9,6 @@ import { Outline } from './outline';
 import { buildGui } from './gui';
 import { unlockAudio } from './audio';
 import { shared } from './shaders';
-import { InkLayer, MARKER_WIDTH, ERASER_WIDTH, type Tool } from './ink';
-import { buildToolbar, markerCursor } from './toolbar';
 
 const app = document.getElementById('app')!;
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -34,20 +32,8 @@ async function loadLid() {
   lidMat.needsUpdate = true;
 }
 
-// ---- marker ink on the lid (under the stickers) ----
-const INK_SCALE = 1.5;
-const lidInk = new InkLayer(Math.round(SURFACE.w * INK_SCALE), Math.round(SURFACE.h * INK_SCALE), (ctx) => {
-  const r = SURFACE.cornerRadius * INK_SCALE;
-  ctx.beginPath();
-  ctx.roundRect(0, 0, SURFACE.w * INK_SCALE, SURFACE.h * INK_SCALE, r);
-});
-const lidInkMesh = new THREE.Mesh(lidGeo, new THREE.MeshBasicMaterial({ map: lidInk.texture, transparent: true, depthWrite: false }));
-lidInkMesh.renderOrder = 1;
-scene.add(lidInkMesh);
-
 function redrawLid() {
   lid.position.z = -(params.wrap.edgeRadius + 40);
-  lidInkMesh.position.z = lid.position.z + 0.5;
 }
 redrawLid();
 
@@ -142,102 +128,6 @@ function stepReset(dt: number) {
 const canvas = renderer.domElement;
 const tmpW = new THREE.Vector2();
 
-// drawing
-let tool: Tool = 'move';
-let inkColor = '#f24e1e';
-let stroking = false;
-let strokePointerId = -1;
-const strokeLast = new THREE.Vector2();
-let strokeTarget: Sticker | null = null; // sticker under the pen, or null for the lid
-
-function updateCursor() {
-  if (tool === 'move') canvas.style.cursor = held ? 'grabbing' : hovered ? 'grab' : 'default';
-  else canvas.style.cursor = markerCursor(inkColor, tool === 'eraser');
-}
-
-/** which surface the pen is touching: the topmost stuck sticker, else the lid */
-function inkTargetAt(wx: number, wy: number): Sticker | null {
-  for (let i = order.length - 1; i >= 0; i--) {
-    const s = order[i];
-    if (s.state !== 'stuck') continue;
-    const l = s.worldToLocal(wx, wy, tmpW);
-    if (s.alphaAtLocal(l.x, l.y) > 0.5) return s;
-  }
-  return null;
-}
-
-const inkPt = [0, 0];
-function layerOf(t: Sticker | null) {
-  return t ? t.ensureInk() : lidInk;
-}
-function inkPoint(t: Sticker | null, wx: number, wy: number) {
-  if (t) return t.inkPoint(wx, wy, inkPt);
-  inkPt[0] = (wx + SURFACE.w / 2) * INK_SCALE;
-  inkPt[1] = (SURFACE.h / 2 - wy) * INK_SCALE;
-  return inkPt;
-}
-function beginOn(t: Sticker | null, wx: number, wy: number) {
-  const erase = tool === 'eraser';
-  const width = (erase ? ERASER_WIDTH : MARKER_WIDTH) * (t ? t.inkScale : INK_SCALE);
-  const L = layerOf(t);
-  L.begin(inkColor, width, erase);
-  const p = inkPoint(t, wx, wy);
-  L.add(p[0], p[1]);
-}
-
-function beginStroke(e: PointerEvent) {
-  view.screenToWorld(e.clientX, e.clientY, tmpW);
-  stroking = true;
-  strokePointerId = e.pointerId;
-  try {
-    canvas.setPointerCapture(e.pointerId);
-  } catch {}
-  strokeLast.copy(tmpW);
-  strokeTarget = inkTargetAt(tmpW.x, tmpW.y);
-  beginOn(strokeTarget, tmpW.x, tmpW.y);
-  layerOf(strokeTarget).redraw();
-}
-
-function moveStroke(e: PointerEvent) {
-  const pts: { x: number; y: number }[] = (e as any).getCoalescedEvents?.() ?? [];
-  if (!pts.length) pts.push({ x: e.clientX, y: e.clientY });
-  const touched = new Set<InkLayer>();
-  for (const p of pts) {
-    const wx = (p.x - view.width / 2) / view.zoom,
-      wy = (view.height / 2 - p.y) / view.zoom;
-    const t = inkTargetAt(wx, wy);
-    if (t !== strokeTarget) {
-      // crossed an edge: run the old surface's stroke up to here and commit it,
-      // then start a fresh one on the new surface from the same point
-      const old = layerOf(strokeTarget);
-      const q = inkPoint(strokeTarget, wx, wy);
-      old.add(q[0], q[1]);
-      old.end();
-      touched.add(old);
-      strokeTarget = t;
-      beginOn(t, strokeLast.x, strokeLast.y);
-    }
-    const L = layerOf(t);
-    const q = inkPoint(t, wx, wy);
-    L.add(q[0], q[1]);
-    touched.add(L);
-    strokeLast.set(wx, wy);
-  }
-  for (const L of touched) L.redraw();
-}
-
-function endStroke() {
-  layerOf(strokeTarget).end();
-  stroking = false;
-  strokePointerId = -1;
-  strokeTarget = null;
-}
-
-function clearAllInk() {
-  lidInk.clear();
-  for (const s of stickers) s.clearInk();
-}
-
 function pick(sx: number, sy: number): Sticker | null {
   view.screenToWorld(sx, sy, tmpW);
   for (let i = order.length - 1; i >= 0; i--) {
@@ -248,10 +138,6 @@ function pick(sx: number, sy: number): Sticker | null {
 
 canvas.addEventListener('pointerdown', (e) => {
   unlockAudio();
-  if (tool !== 'move') {
-    if (!stroking) beginStroke(e);
-    return;
-  }
   if (held) return;
   const s = pick(e.clientX, e.clientY);
   if (!s) {
@@ -278,10 +164,6 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
-  if (stroking && e.pointerId === strokePointerId) {
-    moveStroke(e);
-    return;
-  }
   if (held && e.pointerId === heldPointerId) {
     if (!moved && Math.hypot(e.clientX - downScreen.x, e.clientY - downScreen.y) > 4) moved = true;
     view.screenToWorld(e.clientX, e.clientY, tmpW);
@@ -297,10 +179,6 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function endHold(e: PointerEvent) {
-  if (stroking && e.pointerId === strokePointerId) {
-    endStroke();
-    return;
-  }
   if (!held || e.pointerId !== heldPointerId) return;
   view.screenToWorld(e.clientX, e.clientY, tmpW);
   const s = held;
@@ -316,12 +194,11 @@ canvas.addEventListener('pointerup', endHold);
 canvas.addEventListener('pointercancel', endHold);
 
 function setHover(s: Sticker | null) {
-  if (tool !== 'move') s = null;
   if (s === hovered) return;
   if (hovered) hovered.hoverTarget = 0;
   hovered = s;
   if (hovered && hovered.state === 'stuck') hovered.hoverTarget = 1;
-  updateCursor();
+  canvas.style.cursor = held ? 'grabbing' : hovered ? 'grab' : 'default';
 }
 
 // ---- resize / loop ----
@@ -368,23 +245,7 @@ document.getElementById('reset')!.addEventListener('click', () => {
   startReset();
 });
 
-const toolbar = buildToolbar({
-  onTool: (t) => {
-    tool = t;
-    if (t !== 'move') {
-      setHover(null);
-      selected = null;
-    }
-    updateCursor();
-  },
-  onColor: (hex) => {
-    inkColor = hex;
-    updateCursor();
-  },
-  onClear: clearAllInk,
-});
-
 Promise.all([loadLid(), loadStickers()])
   .then(() => requestAnimationFrame(frame))
   .catch((e) => console.error('sticker load failed', e));
-(window as any).__lap = { stickers, scene, view, renderer, step, startReset, toolbar, lidInk, clearAllInk, get order() { return order; }, get selected() { return selected; } };
+(window as any).__lap = { stickers, scene, view, renderer, step, startReset, get order() { return order; }, get selected() { return selected; } };

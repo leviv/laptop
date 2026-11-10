@@ -6,7 +6,6 @@ import { type Mask, imageToMask, sampleAlpha, traceOutline } from './contour';
 import { makeStickerMaterial, makeShadowMaterial, makeBlurredAlpha, makeHeightMaterial, INSET } from './shaders';
 import { EFFECTS, KINDS, MASK_MODES } from './effects';
 import { SURFACE, surfaceSDF } from './laptop';
-import { InkLayer, EMPTY_INK } from './ink';
 import * as audio from './audio';
 
 export interface StickerDef {
@@ -68,9 +67,6 @@ export class Sticker {
   outline: [number, number][] = [];
   material!: THREE.ShaderMaterial;
   shadowMat!: THREE.ShaderMaterial;
-  texW = 1;
-  texH = 1;
-  ink: InkLayer | null = null; // created the first time a marker touches it
 
   state: State = 'stuck';
   layer = 0;
@@ -147,8 +143,6 @@ export class Sticker {
     c.width = Math.round(this.def.w * texScale);
     c.height = Math.round(this.def.h * texScale);
     c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
-    this.texW = c.width;
-    this.texH = c.height;
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.generateMipmaps = true;
@@ -158,7 +152,6 @@ export class Sticker {
 
     this.buildGeometry();
     this.material = makeStickerMaterial(tex, new THREE.Vector2(this.def.w, this.def.h));
-    this.material.uniforms.uInk.value = EMPTY_INK;
     // each sticker keeps its own "light" position for the foil; it only moves while held
     this.material.uniforms.uPointer.value.set(this.def.x + (Math.random() - 0.5) * 900, this.def.y + (Math.random() - 0.5) * 600);
     const fx = EFFECTS[this.def.id];
@@ -215,37 +208,6 @@ export class Sticker {
       oldS?.dispose();
     }
     this.dirty = true;
-  }
-
-  /** the ink layer for this sticker's surface, created on first use */
-  ensureInk() {
-    if (!this.ink) {
-      this.ink = new InkLayer(this.texW, this.texH);
-      this.material.uniforms.uInk.value = this.ink.texture;
-      this.material.uniforms.uHasInk.value = 1;
-    }
-    return this.ink;
-  }
-
-  /** world → this sticker's ink canvas px */
-  inkPoint(wx: number, wy: number, out: number[]) {
-    const l = this.worldToLocal(wx, wy, tmpP);
-    out[0] = (l.x / this.def.w + 0.5) * this.texW;
-    out[1] = (0.5 - l.y / this.def.h) * this.texH;
-    return out;
-  }
-
-  /** world px → ink canvas px */
-  get inkScale() {
-    return (this.texW / this.def.w + this.texH / this.def.h) * 0.5;
-  }
-
-  clearInk() {
-    if (!this.ink) return;
-    this.ink.dispose();
-    this.ink = null;
-    this.material.uniforms.uInk.value = EMPTY_INK;
-    this.material.uniforms.uHasInk.value = 0;
   }
 
   rebakeShadow() {
@@ -905,7 +867,6 @@ export class Sticker {
   }
 
   dispose() {
-    this.clearInk();
     this.geo.dispose();
     this.shadowGeo.dispose();
     this.material.dispose();

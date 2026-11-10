@@ -36,9 +36,6 @@ current parameter set on the clipboard as JSON; paste it over `DEFAULTS` in
 - `src/audio.ts` — procedural Web Audio sounds: adhesive crackle while peeling,
   a pop when it lets go, a thump + spreading crackle + snap on re-stick.
 - `src/layout.ts` — starting positions, generated from the Figma frame.
-- `src/ink.ts` / `src/toolbar.ts` — dry-erase marker. Ink on the lid lives in a
-  canvas under the stickers; ink on a sticker is a canvas composited into that
-  sticker's shader, so it peels off and travels with it.
 
 Assets come from the Figma file (node `60:3`): `public/laptop.png` is the lid
 render, `public/stickers/*.png` are each sticker node rendered in isolation,
