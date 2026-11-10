@@ -355,17 +355,20 @@ export class Sticker {
     this.startPeel(wx, wy);
   }
 
-  /** slide flat back to the home spot, no peel and no sound (reset) */
-  beginGlideHome() {
-    if (this.state !== 'stuck') return false;
-    this.home.set(this.def.x, this.def.y);
-    const dist = this.anchor.distanceTo(this.home);
+  get awayFromHome() {
     let dAng = this.def.rotation * DEG - this.angle;
     dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
-    if (dist < 0.5 && Math.abs(dAng) < 1e-3) return false;
+    return Math.hypot(this.anchor.x - this.def.x, this.anchor.y - this.def.y) > 0.5 || Math.abs(dAng) > 1e-3;
+  }
+
+  /** slide flat back to the home spot, no peel and no sound (reset) */
+  beginGlideHome() {
+    if (this.state !== 'stuck' || !this.awayFromHome) return false;
+    this.home.set(this.def.x, this.def.y);
+    const dist = this.anchor.distanceTo(this.home);
     this.state = 'gliding';
     this.glideT = 0;
-    this.glideDur = Math.min(0.85, 0.4 + dist / 1600);
+    this.glideDur = Math.min(0.7, 0.32 + dist / 1800);
     this.glideFrom.copy(this.anchor);
     this.glideAngle0 = this.angle;
     this.hoverTarget = 0;
@@ -484,7 +487,7 @@ export class Sticker {
       case 'gliding': {
         this.glideT = Math.min(1, this.glideT + dt / this.glideDur);
         const t = this.glideT;
-        const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        const e = 1 - Math.pow(1 - t, 3); // ease-out: it gets going at once, then settles
         this.anchor.lerpVectors(this.glideFrom, this.home, e);
         let dAng = this.def.rotation * DEG - this.glideAngle0;
         dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));

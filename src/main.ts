@@ -123,8 +123,10 @@ function startReset() {
   selected = null;
   order = [...stickers];
   relayer();
-  resetQueue = stickers.filter((s) => s !== held && s.state === 'stuck');
+  // only the stickers that actually moved take part, so the stagger isn't spent on the rest
+  resetQueue = stickers.filter((s) => s !== held && s.state === 'stuck' && s.awayFromHome);
   resetClock = 0;
+  stepReset(0); // the first one leaves on this very frame
 }
 
 function stepReset(dt: number) {
@@ -132,7 +134,7 @@ function stepReset(dt: number) {
   resetClock += dt;
   while (resetQueue.length && resetClock >= 0) {
     resetQueue.shift()!.beginGlideHome();
-    resetClock -= 0.03;
+    resetClock -= 0.018;
   }
 }
 
