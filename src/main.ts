@@ -170,7 +170,7 @@ canvas.addEventListener('pointerdown', (e) => {
     pinned = true;
     selected = s;
     setHover(null);
-    showcase.open(s.def, 'click anywhere to close');
+    showcase.open(s, 'click anywhere to close');
     return;
   }
   held = s;
@@ -250,7 +250,7 @@ function stepHoldStill(dt: number) {
     return;
   }
   stillFor += dt;
-  if (stillFor >= HOLD_STILL_DELAY && !showcase.isOpen) showcase.open(held.def, 'move to go back to the laptop');
+  if (stillFor >= HOLD_STILL_DELAY && !showcase.isOpen) showcase.open(held, 'move to go back to the laptop');
 }
 
 // ---- resize / loop ----

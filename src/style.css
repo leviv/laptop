@@ -30,7 +30,7 @@ body {
 
 #app canvas {
   display: block;
-  touch-action: none;
+  touch-action: pinch-zoom; /* one finger drags stickers; two fingers still zoom the page */
   -webkit-touch-callout: none;
 }
 
@@ -126,23 +126,13 @@ body {
   perspective: 900px;
   animation: showcase-drift 9s ease-in-out infinite alternate;
 }
-.showcase-aim {
-  /* leans with the pointer (set from showcase.ts); the idle tilt rides inside it */
-  transform-style: preserve-3d;
-  will-change: transform;
-}
 .showcase-tilt {
-  transform-style: preserve-3d;
-  animation: showcase-tilt 13s ease-in-out infinite alternate;
+  /* the sheet's 3D turn happens inside the canvas (showcase.ts), so its shading follows */
   filter: drop-shadow(0 24px 34px rgba(0, 0, 0, 0.36)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 .showcase-img {
   display: block;
-  height: auto;
-  max-height: 58vh;
-  object-fit: contain;
   pointer-events: none;
-  -webkit-user-drag: none;
 }
 .showcase-desc {
   margin: 0;
@@ -171,24 +161,9 @@ body {
     transform: translate(10px, 4px);
   }
 }
-@keyframes showcase-tilt {
-  0% {
-    transform: rotateX(5deg) rotateY(-7deg) rotateZ(-1.5deg);
-  }
-  33% {
-    transform: rotateX(-4deg) rotateY(5deg) rotateZ(1deg);
-  }
-  66% {
-    transform: rotateX(3deg) rotateY(7deg) rotateZ(-0.5deg);
-  }
-  100% {
-    transform: rotateX(-5deg) rotateY(-5deg) rotateZ(1.5deg);
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
-  .showcase-float,
-  .showcase-tilt {
+  .showcase-float {
     animation: none;
   }
 }
