@@ -126,6 +126,11 @@ body {
   perspective: 900px;
   animation: showcase-drift 9s ease-in-out infinite alternate;
 }
+.showcase-aim {
+  /* leans with the pointer (set from showcase.ts); the idle tilt rides inside it */
+  transform-style: preserve-3d;
+  will-change: transform;
+}
 .showcase-tilt {
   transform-style: preserve-3d;
   animation: showcase-tilt 13s ease-in-out infinite alternate;
