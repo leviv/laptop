@@ -19,7 +19,7 @@ export interface StickerDef {
   rotation: number; // deg, CCW
 }
 
-export type State = 'stuck' | 'peeling' | 'unpeeling' | 'carried' | 'sticking' | 'gliding';
+export type State = 'stuck' | 'peeling' | 'unpeeling' | 'carried' | 'sticking' | 'gliding' | 'away';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -109,7 +109,9 @@ export class Sticker {
   glideT = 0;
   glideDur = 0.6;
   glideFrom = new THREE.Vector2();
+  glideTo = new THREE.Vector2();
   glideAngle0 = 0;
+  glideAngle1 = 0;
   profile = new CurlProfile();
 
   constructor(def: StickerDef) {
@@ -326,8 +328,15 @@ export class Sticker {
   /** slide flat back to the home spot, no peel and no sound (reset) */
   beginGlideHome() {
     if (this.state !== 'stuck' || !this.awayFromHome) return false;
-    this.home.set(this.def.x, this.def.y);
-    const dist = this.anchor.distanceTo(this.home);
+    return this.glide(this.def.x, this.def.y, this.def.rotation * DEG);
+  }
+
+  /** slide flat to a pose, no peel and no sound */
+  glide(x: number, y: number, angle: number) {
+    if (this.state !== 'stuck') return false;
+    this.glideTo.set(x, y);
+    this.glideAngle1 = angle;
+    const dist = this.anchor.distanceTo(this.glideTo);
     this.state = 'gliding';
     this.glideT = 0;
     this.glideDur = Math.min(0.7, 0.32 + dist / 1800);
@@ -338,6 +347,34 @@ export class Sticker {
     this.shadow.renderOrder = 150;
     this.syncTransform();
     return true;
+  }
+
+  /** take the sticker off the lid entirely (it is being shown in the showcase) */
+  putAway() {
+    if (this.state === 'sticking') this.finishStick(false);
+    this.state = 'away';
+    this.auto = false;
+    this.hoverTarget = 0;
+    this.hoverH = 0;
+    this.group.visible = false;
+    this.shadow.visible = false;
+    this.syncTransform();
+  }
+
+  /** put it back on the lid at a pose, flat and stuck */
+  bringBack(x: number, y: number, angle: number) {
+    this.anchor.set(x, y);
+    this.angle = angle;
+    this.state = 'stuck';
+    this.group.visible = true;
+    this.shadow.visible = true;
+    this.bend.set(0, 0);
+    this.vel.set(0, 0);
+    this.angVel = 0;
+    this.p = 0;
+    this.dirty = true;
+    this.syncTransform();
+    this.updateGeometry();
   }
 
   /** peel itself off a corner, carry itself home and stick back down (reset) */
@@ -446,20 +483,23 @@ export class Sticker {
         if (this.hoverH > 0.01 || this.dirty) this.updateGeometry();
         return;
 
+      case 'away':
+        return;
+
       case 'gliding': {
         this.glideT = Math.min(1, this.glideT + dt / this.glideDur);
         const t = this.glideT;
         const e = 1 - Math.pow(1 - t, 3); // ease-out: it gets going at once, then settles
-        this.anchor.lerpVectors(this.glideFrom, this.home, e);
-        let dAng = this.def.rotation * DEG - this.glideAngle0;
+        this.anchor.lerpVectors(this.glideFrom, this.glideTo, e);
+        let dAng = this.glideAngle1 - this.glideAngle0;
         dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
         this.angle = this.glideAngle0 + dAng * e;
         // a small lift on the way, so it passes over the others and the shadow spreads
         this.hoverH = Math.sin(Math.PI * t) * 6;
         this.updateGeometry();
         if (t >= 1) {
-          this.anchor.copy(this.home);
-          this.angle = this.def.rotation * DEG;
+          this.anchor.copy(this.glideTo);
+          this.angle = this.glideAngle1;
           this.hoverH = 0;
           this.state = 'stuck';
           this.mesh.renderOrder = 10 + this.layer;
