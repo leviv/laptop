@@ -20,7 +20,7 @@ export interface StickerDef {
   rotation: number; // deg, CCW
 }
 
-export type State = 'stuck' | 'peeling' | 'unpeeling' | 'carried' | 'sticking';
+export type State = 'stuck' | 'peeling' | 'unpeeling' | 'carried' | 'sticking' | 'gliding';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -109,6 +109,11 @@ export class Sticker {
   squashAmt = 0;
   auto = false; // flying home on its own (reset)
   home = new THREE.Vector2();
+  // quiet reset: slides flat back to its home spot
+  glideT = 0;
+  glideDur = 0.6;
+  glideFrom = new THREE.Vector2();
+  glideAngle0 = 0;
   profile = new CurlProfile();
 
   constructor(def: StickerDef) {
@@ -350,6 +355,26 @@ export class Sticker {
     this.startPeel(wx, wy);
   }
 
+  /** slide flat back to the home spot, no peel and no sound (reset) */
+  beginGlideHome() {
+    if (this.state !== 'stuck') return false;
+    this.home.set(this.def.x, this.def.y);
+    const dist = this.anchor.distanceTo(this.home);
+    let dAng = this.def.rotation * DEG - this.angle;
+    dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
+    if (dist < 0.5 && Math.abs(dAng) < 1e-3) return false;
+    this.state = 'gliding';
+    this.glideT = 0;
+    this.glideDur = Math.min(0.85, 0.4 + dist / 1600);
+    this.glideFrom.copy(this.anchor);
+    this.glideAngle0 = this.angle;
+    this.hoverTarget = 0;
+    this.mesh.renderOrder = 200;
+    this.shadow.renderOrder = 150;
+    this.syncTransform();
+    return true;
+  }
+
   /** peel itself off a corner, carry itself home and stick back down (reset) */
   beginAutoReturn() {
     if (this.state !== 'stuck') return false;
@@ -455,6 +480,31 @@ export class Sticker {
       case 'stuck':
         if (this.hoverH > 0.01 || this.dirty) this.updateGeometry();
         return;
+
+      case 'gliding': {
+        this.glideT = Math.min(1, this.glideT + dt / this.glideDur);
+        const t = this.glideT;
+        const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        this.anchor.lerpVectors(this.glideFrom, this.home, e);
+        let dAng = this.def.rotation * DEG - this.glideAngle0;
+        dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
+        this.angle = this.glideAngle0 + dAng * e;
+        // a small lift on the way, so it passes over the others and the shadow spreads
+        this.hoverH = Math.sin(Math.PI * t) * 6;
+        this.updateGeometry();
+        if (t >= 1) {
+          this.anchor.copy(this.home);
+          this.angle = this.def.rotation * DEG;
+          this.hoverH = 0;
+          this.state = 'stuck';
+          this.mesh.renderOrder = 10 + this.layer;
+          this.shadow.renderOrder = 5;
+          this.dirty = true;
+          this.updateGeometry();
+        }
+        this.syncTransform();
+        return;
+      }
 
       case 'peeling': {
         this.holdTime += dt;
@@ -699,7 +749,7 @@ export class Sticker {
           y = byi,
           z = 0;
 
-        if (st === 'stuck') {
+        if (st === 'stuck' || st === 'gliding') {
           if (hover > 0) {
             const e = Math.max(Math.abs(bxi) / (w / 2), Math.abs(byi) / (h / 2));
             z = hover * (0.7 + 0.6 * e * e);

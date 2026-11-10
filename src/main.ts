@@ -7,7 +7,7 @@ import { LAYOUT } from './layout';
 import { View } from './view';
 import { Outline } from './outline';
 import { buildGui } from './gui';
-import { unlockAudio, setDuck } from './audio';
+import { unlockAudio } from './audio';
 import { shared } from './shaders';
 import { InkLayer, MARKER_WIDTH, ERASER_WIDTH, type Tool } from './ink';
 import { buildToolbar, markerCursor } from './toolbar';
@@ -115,10 +115,9 @@ function applyLookAll() {
   }
 }
 
-// ---- reset: every sticker peels itself up and flies home, bottom layer first ----
+// ---- reset: every sticker slides quietly back to where it started, bottom layer first ----
 let resetQueue: Sticker[] = [];
 let resetClock = 0;
-let ducked = false;
 
 function startReset() {
   selected = null;
@@ -126,20 +125,14 @@ function startReset() {
   relayer();
   resetQueue = stickers.filter((s) => s !== held && s.state === 'stuck');
   resetClock = 0;
-  setDuck(0.3);
-  ducked = true;
 }
 
 function stepReset(dt: number) {
-  if (resetQueue.length) {
-    resetClock += dt;
-    while (resetQueue.length && resetClock >= 0) {
-      resetQueue.shift()!.beginAutoReturn();
-      resetClock -= 0.035;
-    }
-  } else if (ducked && !stickers.some((s) => s.auto)) {
-    setDuck(1);
-    ducked = false;
+  if (!resetQueue.length) return;
+  resetClock += dt;
+  while (resetQueue.length && resetClock >= 0) {
+    resetQueue.shift()!.beginGlideHome();
+    resetClock -= 0.03;
   }
 }
 
