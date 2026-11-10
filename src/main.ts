@@ -74,6 +74,11 @@ const HOLD_STILL_DELAY = 0.75; // s
 const STILL_SLOP = 5; // screen px
 let stillFor = 0;
 let stillAt = { x: 0, y: 0 };
+// a double tap on a sticker opens the same overlay and keeps it up until the next click
+const DOUBLE_TAP = 350; // ms between two taps
+let lastTapAt = 0;
+let lastTapOn: Sticker | null = null;
+let pinned = false;
 
 const outline = new Outline(app);
 
@@ -146,9 +151,26 @@ function pick(sx: number, sy: number): Sticker | null {
 canvas.addEventListener('pointerdown', (e) => {
   unlockAudio();
   if (held) return;
+  if (pinned) {
+    // any click puts the pinned overlay away
+    pinned = false;
+    showcase.close();
+    lastTapOn = null;
+    return;
+  }
   const s = pick(e.clientX, e.clientY);
   if (!s) {
     selected = null;
+    lastTapOn = null;
+    return;
+  }
+  if (s === lastTapOn && performance.now() - lastTapAt < DOUBLE_TAP) {
+    // second tap on the same sticker: open its details and keep them up
+    lastTapOn = null;
+    pinned = true;
+    selected = s;
+    setHover(null);
+    showcase.open(s.def, 'click anywhere to close');
     return;
   }
   held = s;
@@ -185,7 +207,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (Math.hypot(e.clientX - stillAt.x, e.clientY - stillAt.y) > STILL_SLOP) {
       stillFor = 0;
       stillAt = { x: e.clientX, y: e.clientY };
-      showcase.close();
+      if (!pinned) showcase.close();
     }
     return;
   }
@@ -198,11 +220,14 @@ function endHold(e: PointerEvent) {
   const s = held;
   held = null;
   heldPointerId = -1;
-  showcase.close();
+  if (!pinned) showcase.close();
   canvas.style.cursor = 'default';
   s.release(tmpW.x, tmpW.y);
-  const tap = !moved && performance.now() - downAt < 350;
+  const now = performance.now();
+  const tap = !moved && now - downAt < 350;
   selected = tap ? (wasSelected ? null : s) : s;
+  lastTapAt = now;
+  lastTapOn = tap ? s : null;
   if (e.pointerType === 'mouse') setHover(pick(e.clientX, e.clientY));
 }
 canvas.addEventListener('pointerup', endHold);
@@ -225,7 +250,7 @@ function stepHoldStill(dt: number) {
     return;
   }
   stillFor += dt;
-  if (stillFor >= HOLD_STILL_DELAY && !showcase.isOpen) showcase.open(held.def);
+  if (stillFor >= HOLD_STILL_DELAY && !showcase.isOpen) showcase.open(held.def, 'move to go back to the laptop');
 }
 
 // ---- resize / loop ----

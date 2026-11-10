@@ -1,6 +1,7 @@
 // The details overlay: hold a carried sticker still and the lid blurs and
 // darkens behind a large, slowly drifting copy of the sticker with its
 // description underneath. Moving the sticker (or letting go) dismisses it.
+// A double tap on a sticker opens the same overlay until the next click.
 import type { StickerDef } from './sticker';
 import { describe } from './descriptions';
 
@@ -18,16 +19,18 @@ export function buildShowcase() {
         </div>
       </div>
       <p class="showcase-desc"></p>
-      <p class="showcase-hint">move to go back to the laptop</p>
+      <p class="showcase-hint"></p>
     </div>`;
   document.body.appendChild(overlay);
   const img = overlay.querySelector<HTMLImageElement>('.showcase-img')!;
   const desc = overlay.querySelector<HTMLParagraphElement>('.showcase-desc')!;
+  const hint = overlay.querySelector<HTMLParagraphElement>('.showcase-hint')!;
 
   let openId: string | null = null;
   let hideTimer = 0;
 
-  function open(def: StickerDef) {
+  function open(def: StickerDef, how: string) {
+    hint.textContent = how;
     if (openId === def.id) return;
     openId = def.id;
     window.clearTimeout(hideTimer);

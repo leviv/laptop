@@ -40,6 +40,7 @@ current parameter set on the clipboard as JSON; paste it over `DEFAULTS` in
   sticker still while carrying it and the lid blurs while the sticker floats
   large in front with its one-line description (edit those in
   `descriptions.ts`, keyed by sticker id); moving or letting go dismisses it.
+  A double tap opens the same overlay until the next click.
 
 Assets come from the Figma file (node `60:3`): `public/laptop.png` is the lid
 render, `public/stickers/*.png` are each sticker node rendered in isolation,
