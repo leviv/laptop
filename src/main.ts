@@ -69,9 +69,11 @@ let downScreen = { x: 0, y: 0 };
 let moved = false;
 let wasSelected = false;
 const lastW = new THREE.Vector2();
-// where the held sticker sat before it was picked up (so the showcase can send it back)
-const pickup = { x: 0, y: 0, angle: 0 };
-let shown: Sticker | null = null; // the sticker currently in the showcase
+// hold a carried sticker still for a moment and its details come up; moving dismisses them
+const HOLD_STILL_DELAY = 0.75; // s
+const STILL_SLOP = 5; // screen px
+let stillFor = 0;
+let stillAt = { x: 0, y: 0 };
 
 const outline = new Outline(app);
 
@@ -111,15 +113,6 @@ let resetClock = 0;
 
 function startReset() {
   selected = null;
-  // a sticker in the showcase comes back onto the lid first, then flies home with the rest
-  if (shown) {
-    const s = shown;
-    shown = null;
-    showcase.close();
-    const c = showcase.centre();
-    view.screenToWorld(c.x, c.y, tmpW);
-    s.bringBack(tmpW.x, tmpW.y, pickup.angle);
-  }
   order = [...stickers];
   relayer();
   // only the stickers that actually moved take part, so the stagger isn't spent on the rest
@@ -169,10 +162,8 @@ canvas.addEventListener('pointerdown', (e) => {
   // the selection ring goes away the moment a drag starts
   wasSelected = selected === s;
   selected = null;
-  pickup.x = s.anchor.x;
-  pickup.y = s.anchor.y;
-  pickup.angle = s.angle;
-  showcase.setArmed(true);
+  stillFor = 0;
+  stillAt = { x: e.clientX, y: e.clientY };
   bringToTop(s);
   view.screenToWorld(e.clientX, e.clientY, tmpW);
   lastW.copy(tmpW);
@@ -191,7 +182,11 @@ canvas.addEventListener('pointermove', (e) => {
     hp.y += tmpW.y - lastW.y;
     lastW.copy(tmpW);
     held.drag(tmpW.x, tmpW.y);
-    showcase.setOver(moved && showcase.contains(e.clientX, e.clientY));
+    if (Math.hypot(e.clientX - stillAt.x, e.clientY - stillAt.y) > STILL_SLOP) {
+      stillFor = 0;
+      stillAt = { x: e.clientX, y: e.clientY };
+      showcase.close();
+    }
     return;
   }
   if (e.pointerType === 'mouse') setHover(pick(e.clientX, e.clientY));
@@ -203,18 +198,8 @@ function endHold(e: PointerEvent) {
   const s = held;
   held = null;
   heldPointerId = -1;
-  showcase.setArmed(false);
-  showcase.setOver(false);
+  showcase.close();
   canvas.style.cursor = 'default';
-  if (moved && e.type !== 'pointercancel' && showcase.contains(e.clientX, e.clientY)) {
-    // dropped in the zone: off the lid and into the showcase
-    s.putAway();
-    shown = s;
-    selected = null;
-    setHover(null);
-    showcase.open(s.def);
-    return;
-  }
   s.release(tmpW.x, tmpW.y);
   const tap = !moved && performance.now() - downAt < 350;
   selected = tap ? (wasSelected ? null : s) : s;
@@ -231,32 +216,26 @@ function setHover(s: Sticker | null) {
   canvas.style.cursor = held ? 'grabbing' : hovered ? 'grab' : 'default';
 }
 
-// ---- drop zone + showcase ----
-const showcase = buildShowcase({
-  onClose: () => {
-    const s = shown;
-    if (!s) return;
-    shown = null;
-    // back onto the lid at the zone, then a flat glide to where it was picked up
-    const c = showcase.centre();
-    view.screenToWorld(c.x, c.y, tmpW);
-    s.bringBack(tmpW.x, tmpW.y, pickup.angle);
-    s.glide(pickup.x, pickup.y, pickup.angle);
-  },
-});
+// ---- details overlay (hold a carried sticker still) ----
+const showcase = buildShowcase();
+
+function stepHoldStill(dt: number) {
+  if (!held || held.state !== 'carried') {
+    stillFor = 0;
+    return;
+  }
+  stillFor += dt;
+  if (stillFor >= HOLD_STILL_DELAY && !showcase.isOpen) showcase.open(held.def);
+}
 
 // ---- resize / loop ----
-const screenPt = { x: 0, y: 0 };
 function resize() {
   const w = window.innerWidth,
     h = window.innerHeight;
   renderer.setSize(w, h);
-  // a strip above for the button and hint, a bigger one below for the drop zone
-  const reserveBottom = Math.round(Math.min(260, Math.max(160, h * 0.26)));
-  view.resize(w, h, 64, reserveBottom);
+  // a strip above for the button and hint
+  view.resize(w, h, 76, 20);
   outline.svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-  view.worldToScreen(0, -SURFACE.h / 2, screenPt);
-  showcase.layout(screenPt.y, w, h);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -265,6 +244,7 @@ let last = performance.now();
 function step(dt: number) {
   shared.uTime.value += dt;
   stepReset(dt);
+  stepHoldStill(dt);
   for (const s of stickers) s.update(dt);
   outline.update(selected, view, dt);
   renderer.setRenderTarget(heightRT);

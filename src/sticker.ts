@@ -19,7 +19,7 @@ export interface StickerDef {
   rotation: number; // deg, CCW
 }
 
-export type State = 'stuck' | 'peeling' | 'unpeeling' | 'carried' | 'sticking' | 'gliding' | 'away';
+export type State = 'stuck' | 'peeling' | 'unpeeling' | 'carried' | 'sticking' | 'gliding';
 
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
@@ -349,34 +349,6 @@ export class Sticker {
     return true;
   }
 
-  /** take the sticker off the lid entirely (it is being shown in the showcase) */
-  putAway() {
-    if (this.state === 'sticking') this.finishStick(false);
-    this.state = 'away';
-    this.auto = false;
-    this.hoverTarget = 0;
-    this.hoverH = 0;
-    this.group.visible = false;
-    this.shadow.visible = false;
-    this.syncTransform();
-  }
-
-  /** put it back on the lid at a pose, flat and stuck */
-  bringBack(x: number, y: number, angle: number) {
-    this.anchor.set(x, y);
-    this.angle = angle;
-    this.state = 'stuck';
-    this.group.visible = true;
-    this.shadow.visible = true;
-    this.bend.set(0, 0);
-    this.vel.set(0, 0);
-    this.angVel = 0;
-    this.p = 0;
-    this.dirty = true;
-    this.syncTransform();
-    this.updateGeometry();
-  }
-
   /** peel itself off a corner, carry itself home and stick back down (reset) */
   beginAutoReturn() {
     if (this.state !== 'stuck') return false;
@@ -481,9 +453,6 @@ export class Sticker {
     switch (this.state) {
       case 'stuck':
         if (this.hoverH > 0.01 || this.dirty) this.updateGeometry();
-        return;
-
-      case 'away':
         return;
 
       case 'gliding': {

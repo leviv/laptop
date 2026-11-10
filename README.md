@@ -36,10 +36,10 @@ current parameter set on the clipboard as JSON; paste it over `DEFAULTS` in
 - `src/audio.ts` — procedural Web Audio sounds: adhesive crackle while peeling,
   a pop when it lets go, a thump + spreading crackle + snap on re-stick.
 - `src/layout.ts` — starting positions, generated from the Figma frame.
-- `src/showcase.ts` / `src/descriptions.ts` — the dashed drop zone under the
-  laptop. Drop a sticker in it and the lid blurs while the sticker floats large
-  in front with its one-line description (edit those in `descriptions.ts`,
-  keyed by sticker id); click anywhere to send it back where it was.
+- `src/showcase.ts` / `src/descriptions.ts` — the details overlay. Hold a
+  sticker still while carrying it and the lid blurs while the sticker floats
+  large in front with its one-line description (edit those in
+  `descriptions.ts`, keyed by sticker id); moving or letting go dismisses it.
 
 Assets come from the Figma file (node `60:3`): `public/laptop.png` is the lid
 render, `public/stickers/*.png` are each sticker node rendered in isolation,
