@@ -320,13 +320,21 @@ export function makeShadowMaterial(mask: THREE.Texture, blurred: THREE.Texture) 
       uniform vec2 uLightSlope;
       uniform float uShadowZ;
       uniform float uBaseZ;
+      uniform float uScatter;
+      uniform vec2 uSize;
       varying vec2 vUv;
       varying float vH;
+      varying vec2 vGrow;
       void main() {
         vUv = uv;
-        vec4 w = modelMatrix * vec4(position, 1.0);
-        float h = max(w.z - uBaseZ, 0.0);
+        float h = max((modelMatrix * vec4(position, 1.0)).z - uBaseZ, 0.0);
         vH = h;
+        // the higher the sheet, the wider its shadow spreads: grow the quad itself
+        // (sampling a smaller patch of the blur instead would run into the quad's edge)
+        vGrow = 1.0 + (uScatter * h * 0.6) / uSize;
+        vec3 p = position;
+        p.xy *= vGrow;
+        vec4 w = modelMatrix * vec4(p, 1.0);
         w.xy -= uLightSlope * h;
         w.z = uShadowZ;
         gl_Position = projectionMatrix * viewMatrix * w;
@@ -344,16 +352,15 @@ export function makeShadowMaterial(mask: THREE.Texture, blurred: THREE.Texture) 
       uniform float uInset;
       varying vec2 vUv;
       varying float vH;
+      varying vec2 vGrow;
       void main() {
         float k = smoothstep(0.0, uBlurHeight, vH);
-        // this quad is 1/uInset larger than the sticker: the sharp mask sits in its
-        // centre, the blurred mask (drawn at uInset) fills it, with room to spread
-        vec2 uvS = (vUv - 0.5) / uInset + 0.5;
+        // this quad is 1/uInset larger than the sticker (and grows with height): the
+        // sharp mask sits in its centre, the blurred mask (drawn at uInset) fills it
+        vec2 uvS = (vUv - 0.5) * vGrow / uInset + 0.5;
         float inS = step(0.0, uvS.x) * step(uvS.x, 1.0) * step(0.0, uvS.y) * step(uvS.y, 1.0);
         float sharp = texture2D(uMask, uvS).a * inS;
-        vec2 grow = 1.0 + (uScatter * vH * 0.6) / uSize;
-        vec2 uvB = (vUv - 0.5) / grow + 0.5;
-        float soft = texture2D(uBlur, uvB).a;
+        float soft = texture2D(uBlur, vUv).a;
         // contact shadow fades in with the first few px of lift
         float contact = sharp * uContact * smoothstep(0.0, 2.5, vH) * (1.0 - k);
         float lifted = soft * uLifted * k;
